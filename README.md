@@ -2,6 +2,12 @@
 
 React web application for managing the Chitram vocabulary learning platform.
 
+## 🔗 Live (Hosted)
+
+The latest deployed build is hosted on Firebase Hosting:
+
+- https://chitram-51e22.web.app
+
 ## ✅ Phase 1: Foundation - COMPLETE
 
 **Built:** Vite + React + TypeScript project with Tailwind CSS, Firebase, Zustand, React Router, and Framer Motion.
@@ -20,6 +26,18 @@ npm run dev        # Start dev server
 npm run build      # Build for production
 npx tsc --noEmit   # Type check
 ```
+
+## 📲 Share With Your Team (Phone + PC)
+
+Use the hosted link above for testing on any device.
+
+If you want to run it locally on the same Wi‑Fi (no hosting), start the dev server with:
+
+```bash
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Then share your machine's LAN URL shown by Vite (e.g. `http://192.168.x.x:5173/`).
 
 ## 📁 Structure
 
@@ -56,6 +74,27 @@ Shares same Firebase backend with Chitram mobile app:
 - ✅ No breaking changes
 - ✅ Backward compatible schema
 - ✅ Identical design language
+
+## 🚢 Deploy (Free)
+
+This app is configured to deploy to Firebase Hosting (free tier) on the Firebase project `chitram-51e22`.
+
+One-time login:
+
+```bash
+npx firebase-tools login
+```
+
+Deploy:
+
+```bash
+npm run deploy:hosting
+```
+
+Notes:
+
+- SPA routing is handled via a rewrite to `/index.html` (see `firebase.json`).
+- Do not commit Firebase service account keys. This repo ignores `scripts/serviceAccountKey.json`.
 
 ---
 
