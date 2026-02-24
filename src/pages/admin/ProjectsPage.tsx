@@ -4,16 +4,21 @@ import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { CreateProjectModal } from '../../components/admin/CreateProjectModal';
-import { getAllProjects, getAllSchools } from '../../services/firebase/firestore';
+import { getAllProjects, getAllSchools, getProject, getSchoolsInProject } from '../../services/firebase/firestore';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import type { ProjectDoc, SchoolDoc } from '../../types/firestore';
 
 export default function ProjectsPage() {
+  const { claims } = useAuth();
   const { setProjects } = useProjectStore();
   const [projects, setProjectsLocal] = useState<Array<ProjectDoc & { id: string }>>([]);
   const [schools, setSchools] = useState<Array<SchoolDoc & { id: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const isProjectAdmin = claims?.role === 'projectAdmin';
+  const myProjectId = claims?.projectId;
 
   useEffect(() => {
     loadData();
@@ -22,13 +27,25 @@ export default function ProjectsPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [projectsData, schoolsData] = await Promise.all([
-        getAllProjects(),
-        getAllSchools(),
-      ]);
-      setProjectsLocal(projectsData);
-      setSchools(schoolsData);
-      setProjects(projectsData);
+      if (isProjectAdmin && myProjectId) {
+        // Project admins see only their own project
+        const [project, projectSchools] = await Promise.all([
+          getProject(myProjectId),
+          getSchoolsInProject(myProjectId),
+        ]);
+        const projectList = project ? [{ ...project, id: myProjectId }] : [];
+        setProjectsLocal(projectList);
+        setSchools(projectSchools);
+        setProjects(projectList);
+      } else {
+        const [projectsData, schoolsData] = await Promise.all([
+          getAllProjects(),
+          getAllSchools(),
+        ]);
+        setProjectsLocal(projectsData);
+        setSchools(schoolsData);
+        setProjects(projectsData);
+      }
     } catch (error) {
       console.error('Error loading projects:', error);
     } finally {
@@ -60,19 +77,21 @@ export default function ProjectsPage() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm mb-md">
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
-            Projects 🎯
+            {isProjectAdmin ? 'My Project 🎯' : 'Projects 🎯'}
           </h1>
-          <Button
-            title="Create Project"
-            onPress={() => setShowCreateProject(true)}
-            variant="primary"
-            size="sm"
-            className="w-auto self-start sm:self-auto"
-            icon={<span>➕</span>}
-          />
+          {!isProjectAdmin && (
+            <Button
+              title="Create Project"
+              onPress={() => setShowCreateProject(true)}
+              variant="primary"
+              size="sm"
+              className="w-auto self-start sm:self-auto"
+              icon={<span>➕</span>}
+            />
+          )}
         </div>
         <p className="font-baloo text-sm sm:text-lg text-text-muted">
-          Manage educational projects and their schools
+          {isProjectAdmin ? 'Details for your assigned project' : 'Manage educational projects and their schools'}
         </p>
       </motion.div>
 
@@ -82,83 +101,70 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <>
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
-            {[
-              {
-                label: 'Total Projects',
-                count: projects.length,
-                icon: '📁',
-                color: 'bg-gradient-to-br from-lavender-light to-primary/20',
-              },
-              {
-                label: 'Total Schools',
-                count: schools.filter((s) => s.projectId).length,
-                icon: '🏫',
-                color: 'bg-gradient-to-br from-mint-light to-secondary/20',
-              },
-              {
-                label: 'Unassigned Schools',
-                count: schools.filter((s) => !s.projectId).length,
-                icon: '⚠️',
-                color: 'bg-gradient-to-br from-peach-light to-accent/20',
-              },
-            ].map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-              >
-                <Card className={`${stat.color}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-baloo text-xs sm:text-md text-text-muted mb-sm">{stat.label}</p>
-                      <h3 className="font-baloo font-extrabold text-xl sm:text-hero text-text-dark">
-                        {stat.count}
-                      </h3>
+          {/* Stats — only for super admins */}
+          {!isProjectAdmin && (
+            <div className="grid grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
+              {[
+                { label: 'Total Projects', count: projects.length, icon: '📁', color: 'bg-gradient-to-br from-lavender-light to-primary/20' },
+                { label: 'Total Schools', count: schools.filter((s) => s.projectId).length, icon: '🏫', color: 'bg-gradient-to-br from-mint-light to-secondary/20' },
+                { label: 'Unassigned Schools', count: schools.filter((s) => !s.projectId).length, icon: '⚠️', color: 'bg-gradient-to-br from-peach-light to-accent/20' },
+              ].map((stat, index) => (
+                <motion.div
+                  key={stat.label}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                  <Card className={`${stat.color}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-baloo text-xs sm:text-md text-text-muted mb-sm">{stat.label}</p>
+                        <h3 className="font-baloo font-extrabold text-xl sm:text-hero text-text-dark">{stat.count}</h3>
+                      </div>
+                      <span className="text-2xl sm:text-4xl">{stat.icon}</span>
                     </div>
-                    <span className="text-2xl sm:text-4xl">{stat.icon}</span>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          )}
 
-          {/* Search */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
-            className="mb-lg"
-          >
-            <Card className="bg-white">
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-md py-sm sm:py-md rounded-lg border-2 border-divider bg-white font-baloo text-sm sm:text-body focus:border-primary focus:outline-none"
-              />
-            </Card>
-          </motion.div>
+          {/* Search — only for super admins with multiple projects */}
+          {!isProjectAdmin && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.3 }}
+              className="mb-lg"
+            >
+              <Card className="bg-white">
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-md py-sm sm:py-md rounded-lg border-2 border-divider bg-white font-baloo text-sm sm:text-body focus:border-primary focus:outline-none"
+                />
+              </Card>
+            </motion.div>
+          )}
 
           {/* Projects Grid */}
           {filteredProjects.length > 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.4 }}
+              transition={{ duration: 0.4, delay: isProjectAdmin ? 0.1 : 0.4 }}
               className="grid grid-cols-1 md:grid-cols-2 gap-md sm:gap-lg"
             >
               {filteredProjects.map((project, index) => {
-                const stats = getProjectStats(project.name);
+                const projStats = getProjectStats(project.name);
                 return (
                   <motion.div
                     key={project.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
+                    transition={{ duration: 0.3, delay: (isProjectAdmin ? 0.1 : 0.4) + index * 0.1 }}
                     whileHover={{ scale: 1.02, y: -5 }}
                   >
                     <Card className="hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-lavender-light/20">
@@ -171,9 +177,7 @@ export default function ProjectsPage() {
                             {project.name}
                           </h3>
                           {project.description && (
-                            <p className="font-baloo text-md text-text-muted">
-                              {project.description}
-                            </p>
+                            <p className="font-baloo text-md text-text-muted">{project.description}</p>
                           )}
                         </div>
                       </div>
@@ -185,17 +189,16 @@ export default function ProjectsPage() {
                             <span className="font-baloo text-xs text-text-muted">Schools</span>
                           </div>
                           <p className="font-baloo font-extrabold text-lg sm:text-xxl text-text-dark">
-                            {stats.schools}
+                            {projStats.schools}
                           </p>
                         </div>
-
                         <div className="bg-white/80 backdrop-blur px-md py-md rounded-lg border border-accent/20">
                           <div className="flex items-center gap-sm mb-xs">
                             <span className="text-2xl">👨‍🏫</span>
                             <span className="font-baloo text-xs text-text-muted">Teachers</span>
                           </div>
                           <p className="font-baloo font-extrabold text-lg sm:text-xxl text-text-dark">
-                            {stats.teachers}
+                            {projStats.teachers}
                           </p>
                         </div>
                       </div>
@@ -212,35 +215,28 @@ export default function ProjectsPage() {
             </motion.div>
           ) : (
             <Card className="text-center py-lg sm:py-xxl">
-              <span className="text-4xl sm:text-6xl mb-md block">
-                {searchQuery ? '🔍' : '🚀'}
-              </span>
+              <span className="text-4xl sm:text-6xl mb-md block">{searchQuery ? '🔍' : '🚀'}</span>
               <h3 className="font-baloo font-bold text-lg sm:text-xl text-text-dark mb-sm">
                 {searchQuery ? 'No projects found' : 'No projects yet'}
               </h3>
               <p className="font-baloo text-sm sm:text-body text-text-muted mb-lg">
-                {searchQuery
-                  ? 'Try a different search term'
-                  : 'Create your first project to get started'}
+                {searchQuery ? 'Try a different search term' : 'Create your first project to get started'}
               </p>
-              {!searchQuery && (
-                <Button
-                  title="Create Your First Project"
-                  onPress={() => setShowCreateProject(true)}
-                  variant="primary"
-                />
+              {!searchQuery && !isProjectAdmin && (
+                <Button title="Create Your First Project" onPress={() => setShowCreateProject(true)} variant="primary" />
               )}
             </Card>
           )}
         </>
       )}
 
-      {/* Modal */}
-      <CreateProjectModal
-        isOpen={showCreateProject}
-        onClose={() => setShowCreateProject(false)}
-        onSuccess={loadData}
-      />
+      {!isProjectAdmin && (
+        <CreateProjectModal
+          isOpen={showCreateProject}
+          onClose={() => setShowCreateProject(false)}
+          onSuccess={loadData}
+        />
+      )}
     </div>
   );
 }

@@ -12,12 +12,16 @@ import { PrincipalLayout } from '../components/layout/PrincipalLayout';
 // Pages
 import LoginPage from '../pages/auth/LoginPage';
 import DeniedPage from '../pages/auth/DeniedPage';
+import VerifyEmailPage from '../pages/auth/VerifyEmailPage';
 import TeacherDashboardPage from '../pages/teacher/DashboardPage';
 import TeacherCurriculumPage from '../pages/teacher/CurriculumPage';
 import TeacherClassesPage from '../pages/teacher/ClassesPage';
 import TeacherAssignmentsPage from '../pages/teacher/AssignmentsPage';
 import TeacherStudentsPage from '../pages/teacher/StudentsPage';
 import TeacherAnalyticsPage from '../pages/teacher/AnalyticsPage';
+import TeacherApprovalsPage from '../pages/teacher/ApprovalsPage';
+import TeacherAttendancePage from '../pages/teacher/AttendancePage';
+import TeacherClassDetailPage from '../pages/teacher/ClassDetailPage';
 import AdminDashboardPage from '../pages/admin/DashboardPage';
 import AdminCurriculumPage from '../pages/admin/CurriculumPage';
 import AdminProjectsPage from '../pages/admin/ProjectsPage';
@@ -30,7 +34,7 @@ import PrincipalDashboardPage from '../pages/principal/DashboardPage';
 import PrincipalAnalyticsPage from '../pages/principal/AnalyticsPage';
 
 export function AppRoutes() {
-  const { user, claims, loading } = useAuthStore();
+  const { user, claims, loading, needsVerification } = useAuthStore();
 
   // Loading - show loading screen
   if (loading) {
@@ -54,6 +58,11 @@ export function AppRoutes() {
     );
   }
 
+  // Authenticated but email not yet verified — show verify screen
+  if (needsVerification) {
+    return <VerifyEmailPage />;
+  }
+
   // Authenticated but no claims - show denied
   if (!claims) {
     return (
@@ -72,14 +81,17 @@ export function AppRoutes() {
         path="/teacher/*"
         element={
           <ProtectedRoute>
-            <RoleGuard allowedRoles={['teacher']}>
+            <RoleGuard allowedRoles={['teacher', 'admin']}>
               <TeacherLayout>
                 <Routes>
                   <Route index element={<TeacherDashboardPage />} />
                   <Route path="curriculum" element={<TeacherCurriculumPage />} />
                   <Route path="classes" element={<TeacherClassesPage />} />
+                  <Route path="classes/:classId" element={<TeacherClassDetailPage />} />
                   <Route path="assignments" element={<TeacherAssignmentsPage />} />
                   <Route path="students" element={<TeacherStudentsPage />} />
+                  <Route path="approvals" element={<TeacherApprovalsPage />} />
+                  <Route path="attendance" element={<TeacherAttendancePage />} />
                   <Route path="analytics" element={<TeacherAnalyticsPage />} />
                 </Routes>
               </TeacherLayout>
@@ -122,7 +134,7 @@ export function AppRoutes() {
         path="/pm/*"
         element={
           <ProtectedRoute>
-            <RoleGuard allowedRoles={['pm']}>
+            <RoleGuard allowedRoles={['pm', 'admin']}>
               <PMLayout>
                 <Routes>
                   <Route index element={<PMDashboardPage />} />
@@ -139,7 +151,7 @@ export function AppRoutes() {
         path="/principal/*"
         element={
           <ProtectedRoute>
-            <RoleGuard allowedRoles={['principal']}>
+            <RoleGuard allowedRoles={['principal', 'admin']}>
               <PrincipalLayout>
                 <Routes>
                   <Route index element={<PrincipalDashboardPage />} />

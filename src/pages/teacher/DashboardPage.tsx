@@ -4,14 +4,42 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { motion } from 'framer-motion';
-import { getClassesByTeacher, getStudentsByTeacher } from '../../services/firebase/firestore';
+import { getClassesByTeacher, getStudentsByTeacher, getSchool } from '../../services/firebase/firestore';
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={`Copy ${label}`}
+      className={`flex items-center gap-xs px-sm py-xs rounded-lg font-baloo text-xs font-semibold transition-all ${
+        copied
+          ? 'bg-secondary text-white'
+          : 'bg-white border-2 border-divider text-text-muted hover:border-primary hover:text-primary'
+      }`}
+    >
+      <span>{copied ? '✓' : '📋'}</span>
+      <span className="font-mono font-bold tracking-widest">{text}</span>
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
 
 export default function TeacherDashboardPage() {
-  const { user } = useAuth();
+  const { user, claims } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [school, setSchool] = useState<any | null>(null);
 
   useEffect(() => {
     loadData();
@@ -29,6 +57,13 @@ export default function TeacherDashboardPage() {
 
       setClasses(classesData);
       setStudents(studentsData);
+
+      // Load school info if teacher has a schoolId claim
+      const schoolId = claims?.schoolId;
+      if (schoolId) {
+        const schoolData = await getSchool(schoolId);
+        setSchool(schoolData ? { ...schoolData, id: schoolId } : null);
+      }
     } catch (error) {
       console.error('Error loading teacher data:', error);
     } finally {
@@ -51,6 +86,7 @@ export default function TeacherDashboardPage() {
     time: '10:00 AM', // TODO: Get from actual schedule
     students: cls.studentIds?.length || 0,
     classId: cls.id,
+    code: cls.code || '',
   }));
 
   // Get recent student activity (mock for now - TODO: Get from submissions)
@@ -93,6 +129,32 @@ export default function TeacherDashboardPage() {
           {user?.email}
         </p>
       </motion.div>
+
+      {/* School Info Banner */}
+      {school && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05 }}
+          className="mb-lg"
+        >
+          <Card className="bg-gradient-to-r from-lavender-light to-mint-light border border-primary/20">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-md">
+              <div className="flex items-center gap-md flex-1">
+                <span className="text-3xl">🏫</span>
+                <div>
+                  <p className="font-baloo text-xs text-text-muted mb-xs">Your School</p>
+                  <h2 className="font-baloo font-bold text-lg text-text-dark">{school.name}</h2>
+                </div>
+              </div>
+              <div className="flex items-center gap-sm flex-wrap">
+                <span className="font-baloo text-xs text-text-muted">School Code:</span>
+                <CopyButton text={school.code} label="school code" />
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-sm sm:gap-md mb-lg sm:mb-xl">
@@ -201,7 +263,7 @@ export default function TeacherDashboardPage() {
               </motion.div>
             )}
 
-            {/* Upcoming Classes */}
+            {/* Your Classes with codes */}
             {upcomingClasses.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -216,23 +278,28 @@ export default function TeacherDashboardPage() {
                     {upcomingClasses.map((cls, index) => (
                       <div
                         key={index}
-                        className="p-md rounded-lg bg-mint-light/30 hover:bg-mint-light transition-colors cursor-pointer"
-                        onClick={() => navigate('/teacher/classes')}
+                        className="p-md rounded-lg bg-mint-light/30 hover:bg-mint-light transition-colors"
                       >
-                        <p className="font-baloo font-bold text-md text-text-dark mb-xs">
+                        <p
+                          className="font-baloo font-bold text-md text-text-dark mb-xs cursor-pointer"
+                          onClick={() => navigate('/teacher/classes')}
+                        >
                           {cls.class}
                         </p>
-                        <p className="font-baloo text-sm text-text-muted mb-xs">
+                        <p className="font-baloo text-sm text-text-muted mb-sm">
                           {cls.subject}
                         </p>
-                        <div className="flex items-center justify-between">
-                          <span className="font-baloo text-xs text-text-muted">
-                            🕒 {cls.time}
-                          </span>
+                        <div className="flex items-center justify-between mb-sm">
                           <span className="font-baloo text-xs text-text-muted">
                             👥 {cls.students} students
                           </span>
                         </div>
+                        {cls.code && (
+                          <div className="flex items-center gap-xs">
+                            <span className="font-baloo text-xs text-text-muted">Class code:</span>
+                            <CopyButton text={cls.code} label="class code" />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

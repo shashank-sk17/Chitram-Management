@@ -7,7 +7,7 @@ import { Card } from '../../components/common/Card';
 import { CreateProjectModal } from '../../components/admin/CreateProjectModal';
 import { CreateSchoolModal } from '../../components/admin/CreateSchoolModal';
 import { InviteUserModal } from '../../components/admin/InviteUserModal';
-import { getAllProjects, getAllSchools } from '../../services/firebase/firestore';
+import { getAllProjects, getAllSchools, getProject, getSchoolsInProject } from '../../services/firebase/firestore';
 import type { ProjectDoc, SchoolDoc } from '../../types/firestore';
 
 export default function AdminDashboardPage() {
@@ -20,6 +20,9 @@ export default function AdminDashboardPage() {
   const [showCreateSchool, setShowCreateSchool] = useState(false);
   const [showInviteUser, setShowInviteUser] = useState(false);
 
+  const isProjectAdmin = claims?.role === 'projectAdmin';
+  const myProjectId = claims?.projectId;
+
   useEffect(() => {
     loadData();
   }, []);
@@ -27,14 +30,26 @@ export default function AdminDashboardPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [projectsData, schoolsData] = await Promise.all([
-        getAllProjects(),
-        getAllSchools(),
-      ]);
-      setProjectsLocal(projectsData);
-      setSchoolsLocal(schoolsData);
-      setProjects(projectsData);
-      setSchools(schoolsData);
+      if (isProjectAdmin && myProjectId) {
+        const [project, schoolsData] = await Promise.all([
+          getProject(myProjectId),
+          getSchoolsInProject(myProjectId),
+        ]);
+        const projectList = project ? [{ ...project, id: myProjectId }] : [];
+        setProjectsLocal(projectList);
+        setSchoolsLocal(schoolsData);
+        setProjects(projectList);
+        setSchools(schoolsData);
+      } else {
+        const [projectsData, schoolsData] = await Promise.all([
+          getAllProjects(),
+          getAllSchools(),
+        ]);
+        setProjectsLocal(projectsData);
+        setSchoolsLocal(schoolsData);
+        setProjects(projectsData);
+        setSchools(schoolsData);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -42,18 +57,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Only super admin can see all projects
   const canSeeAllProjects = claims?.role === 'admin';
-
-  // Project admin can only see their project
-  const filteredProjects = canSeeAllProjects
-    ? projects
-    : projects.filter((p) => p.name === claims?.projectId);
-
-  const projectSchools = filteredProjects.flatMap((p) =>
-    schools.filter((s) => s.projectId === p.name)
-  );
-
   const unassignedSchools = schools.filter((s) => !s.projectId);
 
   return (
@@ -84,22 +88,22 @@ export default function AdminDashboardPage() {
             {[
               {
                 icon: '📁',
-                count: filteredProjects.length,
+                count: projects.length,
                 label: canSeeAllProjects ? 'Total Projects' : 'Your Project',
                 color: 'bg-gradient-to-br from-lavender-light to-primary/20',
               },
               {
                 icon: '🏫',
-                count: projectSchools.length,
+                count: schools.filter((s) => s.projectId).length,
                 label: 'Schools in Projects',
                 color: 'bg-gradient-to-br from-mint-light to-secondary/20',
               },
-              {
+              ...(!isProjectAdmin ? [{
                 icon: '📋',
                 count: unassignedSchools.length,
                 label: 'Unassigned Schools',
                 color: 'bg-gradient-to-br from-peach-light to-accent/20',
-              },
+              }] : []),
             ].map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -165,7 +169,7 @@ export default function AdminDashboardPage() {
           </motion.div>
 
           {/* Projects List */}
-          {filteredProjects.length > 0 && (
+          {projects.length > 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -176,7 +180,7 @@ export default function AdminDashboardPage() {
                 Projects
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-md sm:gap-lg">
-                {filteredProjects.map((project) => {
+                {projects.map((project) => {
                   const schoolCount = schools.filter(
                     (s) => s.projectId === project.name
                   ).length;

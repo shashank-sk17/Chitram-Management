@@ -11,6 +11,8 @@ const teacherNavItems = [
   { path: '/teacher/classes', label: 'Classes', icon: '👨‍🏫' },
   { path: '/teacher/assignments', label: 'Assignments', icon: '📝' },
   { path: '/teacher/students', label: 'Students', icon: '👦' },
+  { path: '/teacher/approvals', label: 'Approvals', icon: '✋' },
+  { path: '/teacher/attendance', label: 'Attendance', icon: '📅' },
   { path: '/teacher/analytics', label: 'Analytics', icon: '📈' },
 ];
 

@@ -1,0 +1,304 @@
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useAuth } from '../../features/auth/hooks/useAuth';
+import { useTeacherStore } from '../../stores/teacherStore';
+import { Card } from '../../components/common/Card';
+import { Button } from '../../components/common/Button';
+import { PendingStudentsModal } from '../../components/teacher/PendingStudentsModal';
+import type { StudentDoc, AssignmentDoc } from '../../types/firestore';
+
+function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className={`flex items-center gap-xs px-md py-sm rounded-full font-baloo font-semibold text-sm transition-all ${
+        copied
+          ? 'bg-secondary text-white'
+          : 'bg-lavender-light text-primary hover:bg-primary hover:text-white'
+      }`}
+    >
+      <span>{copied ? '✓' : '📋'}</span>
+      {code}
+    </button>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    active:    'bg-mint-light text-secondary border border-secondary/30',
+    upcoming:  'bg-lavender-light text-primary border border-primary/30',
+    completed: 'bg-divider text-text-muted border border-divider',
+  };
+  return (
+    <span className={`font-baloo text-xs font-semibold px-sm py-xs rounded-full ${styles[status] ?? styles.completed}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+export default function ClassDetailPage() {
+  const { classId } = useParams<{ classId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const {
+    classes,
+    listenToTeacherClasses,
+    listenToClassStudents,
+    listenToTeacherAssignments,
+    getStudentsForClass,
+    getPendingStudentsForClass,
+    getAssignmentsForClass,
+    loadingClasses,
+  } = useTeacherStore();
+
+  const [showPending, setShowPending] = useState(false);
+  const [tab, setTab] = useState<'students' | 'assignments'>('students');
+
+  // Ensure store is populated if navigated directly
+  useEffect(() => {
+    if (!user) return;
+    const unsubClasses = listenToTeacherClasses(user.uid);
+    const unsubAssignments = listenToTeacherAssignments(user.uid);
+    return () => {
+      unsubClasses();
+      unsubAssignments();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!classId) return;
+    const unsub = listenToClassStudents(classId);
+    return unsub;
+  }, [classId]);
+
+  const classData = classes.find(c => c.id === classId);
+  const approvedStudents: Array<StudentDoc & { id: string }> = classId ? getStudentsForClass(classId) : [];
+  const pendingStudents: Array<StudentDoc & { id: string }> = classId ? getPendingStudentsForClass(classId) : [];
+  const classAssignments: Array<AssignmentDoc & { id: string }> = classId ? getAssignmentsForClass(classId) : [];
+
+  if (loadingClasses) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!classData) {
+    return (
+      <div className="max-w-3xl mx-auto text-center py-xxl">
+        <span className="text-6xl block mb-md">🔍</span>
+        <h2 className="font-baloo font-bold text-xl text-text-dark mb-sm">Class Not Found</h2>
+        <p className="font-baloo text-md text-text-muted mb-lg">
+          This class doesn't exist or you don't have access to it.
+        </p>
+        <Button title="Back to Classes" onPress={() => navigate('/teacher/classes')} variant="primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      {/* Back nav */}
+      <button
+        onClick={() => navigate('/teacher/classes')}
+        className="flex items-center gap-xs font-baloo text-sm text-text-muted hover:text-primary transition-colors mb-lg"
+      >
+        ← Back to Classes
+      </button>
+
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="mb-xl"
+      >
+        <Card className="bg-gradient-to-r from-lavender-light to-mint-light border border-primary/10">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-md">
+            <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-sm flex-shrink-0">
+              <span className="text-3xl">🏫</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark mb-xs">
+                {classData.name}
+              </h1>
+              <p className="font-baloo text-md text-text-muted">Grade {classData.grade}</p>
+            </div>
+            <div className="flex flex-col items-start sm:items-end gap-sm">
+              <div className="flex items-center gap-xs">
+                <span className="font-baloo text-xs text-text-muted">Class Code:</span>
+                <CopyCodeButton code={classData.code} />
+              </div>
+              {pendingStudents.length > 0 && (
+                <button
+                  onClick={() => setShowPending(true)}
+                  className="flex items-center gap-xs px-md py-sm rounded-full bg-warning/10 border-2 border-warning font-baloo text-sm font-semibold text-warning hover:bg-warning hover:text-white transition-all"
+                >
+                  ⚠️ {pendingStudents.length} Pending Approval
+                </button>
+              )}
+            </div>
+          </div>
+        </Card>
+      </motion.div>
+
+      {/* Stats row */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.1 }}
+        className="grid grid-cols-2 sm:grid-cols-4 gap-sm sm:gap-md mb-xl"
+      >
+        {[
+          { label: 'Students',           value: approvedStudents.length,                          icon: '👨‍🎓', color: 'from-lavender-light to-primary/10' },
+          { label: 'Pending',            value: pendingStudents.length,                            icon: '⏳', color: 'from-peach-light to-accent/10' },
+          { label: 'Active Assignments', value: classAssignments.filter(a => a.status === 'active').length,    icon: '📝', color: 'from-mint-light to-secondary/10' },
+          { label: 'Completed',          value: classAssignments.filter(a => a.status === 'completed').length, icon: '✅', color: 'from-lavender-light to-secondary/10' },
+        ].map((stat, i) => (
+          <motion.div key={stat.label} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 + i * 0.05 }}>
+            <Card className={`bg-gradient-to-br ${stat.color}`}>
+              <div className="text-center">
+                <span className="text-2xl block mb-xs">{stat.icon}</span>
+                <p className="font-baloo font-extrabold text-xxl text-text-dark">{stat.value}</p>
+                <p className="font-baloo text-xs text-text-muted leading-tight">{stat.label}</p>
+              </div>
+            </Card>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* Tabs */}
+      <div className="flex gap-sm mb-lg border-b-2 border-divider">
+        {(['students', 'assignments'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`font-baloo font-semibold text-md pb-sm px-sm border-b-2 -mb-[2px] transition-colors capitalize ${
+              tab === t
+                ? 'border-primary text-primary'
+                : 'border-transparent text-text-muted hover:text-text-dark'
+            }`}
+          >
+            {t === 'students' ? `Students (${approvedStudents.length})` : `Assignments (${classAssignments.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+
+        {/* ── Students tab ── */}
+        {tab === 'students' && (
+          approvedStudents.length === 0 ? (
+            <Card className="text-center py-xl">
+              <span className="text-5xl block mb-md">👋</span>
+              <h3 className="font-baloo font-bold text-lg text-text-dark mb-sm">No students yet</h3>
+              <p className="font-baloo text-sm text-text-muted">
+                Share the class code <span className="font-bold text-primary">{classData.code}</span> with your students to let them join.
+              </p>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-sm">
+              {approvedStudents.map(student => (
+                <Card key={student.id} className="bg-white hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-md">
+                    <div
+                      className="w-11 h-11 rounded-full flex items-center justify-center font-baloo font-bold text-white flex-shrink-0"
+                      style={{ backgroundColor: student.avatarColor || '#7C81FF' }}
+                    >
+                      {(student.name || student.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-baloo font-bold text-md text-text-dark truncate">{student.name || 'Unnamed'}</p>
+                      <p className="font-baloo text-sm text-text-muted truncate">{student.email}</p>
+                      <div className="flex gap-md mt-xs flex-wrap">
+                        {student.grade && (
+                          <span className="font-baloo text-xs text-text-muted">Grade {student.grade}</span>
+                        )}
+                        {student.activeLearningLanguage && (
+                          <span className="font-baloo text-xs bg-lavender-light text-primary px-sm py-xs rounded-full">
+                            {student.activeLearningLanguage.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-baloo font-bold text-lg text-secondary">
+                        {student.analytics?.averageAccuracy ?? 0}%
+                      </p>
+                      <p className="font-baloo text-xs text-text-muted">accuracy</p>
+                      <p className="font-baloo text-xs text-text-muted">
+                        {student.analytics?.learnedWords ?? 0} words
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* ── Assignments tab ── */}
+        {tab === 'assignments' && (
+          classAssignments.length === 0 ? (
+            <Card className="text-center py-xl">
+              <span className="text-5xl block mb-md">📋</span>
+              <h3 className="font-baloo font-bold text-lg text-text-dark mb-sm">No assignments yet</h3>
+              <p className="font-baloo text-sm text-text-muted mb-lg">
+                Create an assignment for this class from the Assignments tab.
+              </p>
+              <Button title="Go to Assignments" onPress={() => navigate('/teacher/assignments')} variant="outline" size="sm" />
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-sm">
+              {classAssignments.map(assignment => (
+                <Card key={assignment.id} className="bg-white hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-md">
+                    <div className="w-10 h-10 rounded-xl bg-lavender-light flex items-center justify-center flex-shrink-0">
+                      <span className="text-xl">📝</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-sm mb-xs">
+                        <p className="font-baloo font-bold text-md text-text-dark">
+                          Word Set #{assignment.wordSetId}
+                        </p>
+                        <StatusBadge status={assignment.status} />
+                      </div>
+                      <p className="font-baloo text-sm text-text-muted">
+                        {assignment.startDate} → {assignment.endDate}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-baloo text-xs text-text-muted">
+                        {assignment.assignedTo === 'all' ? 'All students' : `${(assignment.assignedTo as string[]).length} students`}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
+        )}
+      </motion.div>
+
+      {/* Pending students modal */}
+      {classId && (
+        <PendingStudentsModal
+          isOpen={showPending}
+          onClose={() => setShowPending(false)}
+          classId={classId}
+          className={classData.name}
+        />
+      )}
+    </div>
+  );
+}

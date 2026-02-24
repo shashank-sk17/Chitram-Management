@@ -4,6 +4,7 @@ import {
   signOut,
   onAuthStateChanged,
   getIdTokenResult,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { auth, functions } from '../../../config/firebase';
@@ -11,17 +12,26 @@ import { useAuthStore } from '../../../stores/authStore';
 import type { CustomClaims } from '../../../types/claims';
 
 export function useAuth() {
-  const { user, claims, loading, setUser, setClaims, setLoading, reset } = useAuthStore();
+  const { user, claims, loading, setUser, setClaims, setLoading, setLoginError, setNeedsVerification, reset } = useAuthStore();
 
   // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Get custom claims from ID token
         const tokenResult = await getIdTokenResult(firebaseUser, true);
         const customClaims = validateClaims(tokenResult.claims);
-        setClaims(customClaims);
+
+        // Teachers who self-register must verify their email before accessing the portal.
+        // Admin-invited users (admin, projectAdmin, pm, principal) are pre-verified by the
+        // Cloud Function, so they're never blocked here.
+        if (customClaims?.role === 'teacher' && !firebaseUser.emailVerified) {
+          setNeedsVerification(true);
+          setClaims(null);
+        } else {
+          setNeedsVerification(false);
+          setClaims(customClaims);
+        }
       } else {
         reset();
       }
@@ -48,7 +58,9 @@ export function useAuth() {
       return customClaims;
     } catch (error: any) {
       console.error('Login error:', error);
-      throw new Error(error.message || 'Failed to sign in');
+      const msg = error.message || 'Failed to sign in';
+      setLoginError(msg);
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
@@ -83,6 +95,11 @@ export function useAuth() {
 
       // Cloud Function created the user and set claims — now sign in
       const credential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Send email verification — teacher must verify before portal access is granted.
+      // Best-effort: don't block registration if this fails.
+      await sendEmailVerification(credential.user).catch(() => {});
+
       const tokenResult = await getIdTokenResult(credential.user, true);
       const customClaims = validateClaims(tokenResult.claims);
 
@@ -91,8 +108,11 @@ export function useAuth() {
         throw new Error('Registration succeeded but claims were not set. Please try signing in.');
       }
 
+      // onAuthStateChanged will detect !emailVerified and set needsVerification — no
+      // need to set claims here; just let the listener handle state after registration.
       setUser(credential.user);
-      setClaims(customClaims);
+      setClaims(null);
+      setNeedsVerification(true);
       return customClaims;
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -113,6 +133,8 @@ export function useAuth() {
     register,
     forceTokenRefresh,
   };
+
+  // Note: needsVerification is read directly from useAuthStore in AppRoutes/VerifyEmailPage.
 }
 
 // Helper function to validate and extract custom claims

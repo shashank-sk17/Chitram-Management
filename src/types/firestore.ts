@@ -92,6 +92,17 @@ export interface AssignmentDoc {
   };
 }
 
+export interface LearningAttemptDoc {
+  wordId: number;
+  timestamp: Timestamp;
+  finalLabel: boolean;
+  mlPrediction?: boolean;
+  mlConfidence?: number;
+  recallDuration?: number;
+  guidedDrawingDuration?: number;
+  unguidedDrawingDuration?: number;
+}
+
 // ===== New Collections (for web app) =====
 
 export interface ProjectDoc {

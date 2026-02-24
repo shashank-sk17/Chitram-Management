@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { useAuthStore } from '../../stores/authStore';
 import { Button } from '../../components/common/Button';
 import { Springs } from '../../theme/animations';
 
@@ -31,7 +32,7 @@ function parseError(raw: string): ParsedError {
   if (lower.includes('too-many-requests') || lower.includes('blocked')) {
     return { type: 'credentials', icon: '🛑', title: 'Too Many Attempts', message: 'Account temporarily locked. Please wait a moment and try again.' };
   }
-  if (lower.includes('missing') && lower.includes('role') || lower.includes('claims') || lower.includes('denied') || lower.includes('permission')) {
+  if ((lower.includes('missing') && lower.includes('role')) || lower.includes('invalid or missing role') || lower.includes('denied') || lower.includes('permission')) {
     return { type: 'permissions', icon: '🚫', title: 'Access Denied', message: 'Your account does not have management portal access. Contact your administrator.' };
   }
   if (lower.includes('already-exists') || lower.includes('email-already-in-use') || lower.includes('already exists')) {
@@ -98,7 +99,17 @@ export default function LoginPage() {
   const [regShakeKey, setRegShakeKey] = useState(0);
 
   const { login, register, loading } = useAuth();
+  const { loginError, setLoginError } = useAuthStore();
   const navigate = useNavigate();
+
+  // On mount, steal any persisted login error (survives component remounts caused by auth state changes)
+  useEffect(() => {
+    if (loginError) {
+      setError(loginError);
+      setShakeKey(k => k + 1);
+      setLoginError(null);
+    }
+  }, []);
 
   function triggerShake(isReg: boolean) {
     if (isReg) setRegShakeKey(k => k + 1);

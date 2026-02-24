@@ -4,10 +4,12 @@ import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { CreateSchoolModal } from '../../components/admin/CreateSchoolModal';
-import { getAllSchools, getAllProjects } from '../../services/firebase/firestore';
+import { getAllSchools, getAllProjects, getSchoolsInProject } from '../../services/firebase/firestore';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import type { SchoolDoc, ProjectDoc } from '../../types/firestore';
 
 export default function SchoolsPage() {
+  const { claims } = useAuth();
   const { setSchools } = useProjectStore();
   const [schools, setSchoolsLocal] = useState<Array<SchoolDoc & { id: string }>>([]);
   const [projects, setProjects] = useState<Array<ProjectDoc & { id: string }>>([]);
@@ -16,6 +18,9 @@ export default function SchoolsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterProject, setFilterProject] = useState<string>('all');
 
+  const isProjectAdmin = claims?.role === 'projectAdmin';
+  const myProjectId = claims?.projectId;
+
   useEffect(() => {
     loadData();
   }, []);
@@ -23,13 +28,19 @@ export default function SchoolsPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [schoolsData, projectsData] = await Promise.all([
-        getAllSchools(),
-        getAllProjects(),
-      ]);
-      setSchoolsLocal(schoolsData);
-      setProjects(projectsData);
-      setSchools(schoolsData);
+      if (isProjectAdmin && myProjectId) {
+        const schoolsData = await getSchoolsInProject(myProjectId);
+        setSchoolsLocal(schoolsData);
+        setSchools(schoolsData);
+      } else {
+        const [schoolsData, projectsData] = await Promise.all([
+          getAllSchools(),
+          getAllProjects(),
+        ]);
+        setSchoolsLocal(schoolsData);
+        setProjects(projectsData);
+        setSchools(schoolsData);
+      }
     } catch (error) {
       console.error('Error loading schools:', error);
     } finally {
@@ -42,6 +53,7 @@ export default function SchoolsPage() {
       school.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       school.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesProject =
+      isProjectAdmin ||
       filterProject === 'all' ||
       (filterProject === 'unassigned' && !school.projectId) ||
       school.projectId === filterProject;
@@ -77,7 +89,7 @@ export default function SchoolsPage() {
           />
         </div>
         <p className="font-baloo text-sm sm:text-lg text-text-muted">
-          Manage all schools across projects
+          {isProjectAdmin ? 'Schools in your project' : 'Manage all schools across projects'}
         </p>
       </motion.div>
 
@@ -92,7 +104,7 @@ export default function SchoolsPage() {
             {[
               { label: 'Total Schools', count: stats.total, icon: '🏫', color: 'bg-gradient-to-br from-lavender-light to-primary/20' },
               { label: 'Assigned', count: stats.assigned, icon: '✅', color: 'bg-gradient-to-br from-mint-light to-secondary/20' },
-              { label: 'Unassigned', count: stats.unassigned, icon: '⚠️', color: 'bg-gradient-to-br from-peach-light to-accent/20' },
+              ...(!isProjectAdmin ? [{ label: 'Unassigned', count: stats.unassigned, icon: '⚠️', color: 'bg-gradient-to-br from-peach-light to-accent/20' }] : []),
             ].map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -124,7 +136,6 @@ export default function SchoolsPage() {
           >
             <Card className="bg-white">
               <div className="flex flex-col md:flex-row gap-md">
-                {/* Search */}
                 <div className="flex-1">
                   <input
                     type="text"
@@ -134,23 +145,23 @@ export default function SchoolsPage() {
                     className="w-full px-md py-sm sm:py-md rounded-lg border-2 border-divider bg-white font-baloo text-sm sm:text-body focus:border-primary focus:outline-none"
                   />
                 </div>
-
-                {/* Project Filter */}
-                <div className="md:w-64">
-                  <select
-                    value={filterProject}
-                    onChange={(e) => setFilterProject(e.target.value)}
-                    className="w-full px-md py-sm sm:py-md rounded-lg border-2 border-divider bg-white font-baloo text-sm sm:text-body focus:border-primary focus:outline-none"
-                  >
-                    <option value="all">All Projects</option>
-                    <option value="unassigned">Unassigned</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.name}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!isProjectAdmin && (
+                  <div className="md:w-64">
+                    <select
+                      value={filterProject}
+                      onChange={(e) => setFilterProject(e.target.value)}
+                      className="w-full px-md py-sm sm:py-md rounded-lg border-2 border-divider bg-white font-baloo text-sm sm:text-body focus:border-primary focus:outline-none"
+                    >
+                      <option value="all">All Projects</option>
+                      <option value="unassigned">Unassigned</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.name}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </Card>
           </motion.div>
@@ -193,9 +204,7 @@ export default function SchoolsPage() {
                       <div className="bg-mint-light px-md py-sm rounded-lg border border-secondary/20">
                         <div className="flex items-center gap-xs">
                           <span className="text-lg">📁</span>
-                          <span className="font-baloo text-sm text-text-dark">
-                            {school.projectId}
-                          </span>
+                          <span className="font-baloo text-sm text-text-dark">{school.projectId}</span>
                         </div>
                       </div>
                     ) : (
@@ -225,16 +234,13 @@ export default function SchoolsPage() {
                 No schools found
               </h3>
               <p className="font-baloo text-sm sm:text-body text-text-muted">
-                {searchQuery || filterProject !== 'all'
-                  ? 'Try adjusting your filters'
-                  : 'Get started by creating your first school'}
+                {searchQuery ? 'Try adjusting your filters' : 'Get started by creating your first school'}
               </p>
             </Card>
           )}
         </>
       )}
 
-      {/* Modal */}
       <CreateSchoolModal
         isOpen={showCreateSchool}
         onClose={() => setShowCreateSchool(false)}

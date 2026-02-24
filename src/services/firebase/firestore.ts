@@ -9,12 +9,14 @@ import {
   query,
   where,
   limit,
+  orderBy,
+  Timestamp,
   serverTimestamp,
   arrayUnion,
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import type { ProjectDoc, SchoolDoc, TeacherDoc, StudentDoc } from '../../types/firestore';
+import type { ProjectDoc, SchoolDoc, TeacherDoc, StudentDoc, LearningAttemptDoc } from '../../types/firestore';
 
 // ===== Projects =====
 
@@ -253,6 +255,26 @@ export async function getStudentsByClass(classId: string): Promise<Array<Student
   return students;
 }
 
+export async function getPendingStudentsByClass(classId: string): Promise<Array<StudentDoc & { id: string }>> {
+  const classDoc = await getDoc(doc(db, 'classes', classId));
+  if (!classDoc.exists()) return [];
+
+  const classData = classDoc.data();
+  const pendingIds: string[] = classData.pendingStudentIds || [];
+
+  const students: Array<StudentDoc & { id: string }> = [];
+  for (const studentId of pendingIds) {
+    const studentDoc = await getDoc(doc(db, 'students', studentId));
+    if (studentDoc.exists()) {
+      students.push({
+        id: studentDoc.id,
+        ...(studentDoc.data() as StudentDoc),
+      });
+    }
+  }
+  return students;
+}
+
 export async function getStudentsByTeacher(teacherId: string) {
   const classes = await getClassesByTeacher(teacherId);
   const allStudents = [];
@@ -326,6 +348,28 @@ export async function getRecentActivity(teacherId: string, maxResults: number = 
     id: doc.id,
     ...doc.data(),
   }));
+}
+
+// ===== Student Attempts =====
+
+export async function getAttemptsForDay(
+  studentId: string,
+  date: Date
+): Promise<Array<LearningAttemptDoc & { id: string }>> {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+
+  const q = query(
+    collection(db, 'students', studentId, 'attempts'),
+    where('timestamp', '>=', Timestamp.fromDate(start)),
+    where('timestamp', '<=', Timestamp.fromDate(end)),
+    orderBy('timestamp', 'asc')
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as LearningAttemptDoc) }));
 }
 
 // ===== Utilities =====

@@ -6,6 +6,29 @@ import { Card } from '../../components/common/Card';
 import { CreateClassModal } from '../../components/teacher/CreateClassModal';
 import { useNavigate } from 'react-router-dom';
 
+function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy class code"
+      className={`flex items-center gap-xs px-md py-sm rounded-full font-baloo font-semibold text-sm transition-all ${
+        copied ? 'bg-secondary text-white' : 'bg-lavender-light text-primary hover:bg-primary hover:text-white'
+      }`}
+    >
+      <span>{copied ? '✓' : '📋'}</span>
+      {code}
+    </button>
+  );
+}
+
 export default function TeacherClassesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -152,11 +175,7 @@ export default function TeacherClassesPage() {
                             Grade {classData.grade}
                           </p>
                         </div>
-                        <div className="bg-lavender-light px-md py-sm rounded-full">
-                          <span className="font-baloo font-semibold text-sm text-primary">
-                            {classData.code}
-                          </span>
-                        </div>
+                        <CopyCodeButton code={classData.code} />
                       </div>
 
                       {/* Stats */}
