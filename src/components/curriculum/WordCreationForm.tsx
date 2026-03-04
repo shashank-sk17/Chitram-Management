@@ -17,13 +17,11 @@ type FormStep = 1 | 2 | 3 | 4;
 
 const SUPPORTED_LANGUAGES: Array<{ code: LanguageCode; name: string }> = [
   { code: 'en', name: 'English' },
-  { code: 'hi', name: 'Hindi' },
-  { code: 'te', name: 'Telugu' },
-  { code: 'ta', name: 'Tamil' },
-  { code: 'kn', name: 'Kannada' },
-  { code: 'ml', name: 'Malayalam' },
-  { code: 'bn', name: 'Bengali' },
+  { code: 'hi', name: 'Hindi'   },
+  { code: 'te', name: 'Telugu'  },
   { code: 'mr', name: 'Marathi' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French'  },
 ];
 
 export function WordCreationForm({ isOpen, onClose, onSuccess, source }: WordCreationFormProps) {

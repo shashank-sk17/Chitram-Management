@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 
 // Language codes supported in the app
-export type LanguageCode = 'en' | 'hi' | 'te' | 'ta' | 'kn' | 'ml' | 'bn' | 'mr' | 'es' | 'fr';
+export type LanguageCode = 'en' | 'hi' | 'te' | 'mr' | 'es' | 'fr';
 
 // ===== Existing Collections (from mobile app) =====
 
@@ -71,6 +71,14 @@ export interface ClassDoc {
   code: string;
   studentIds: string[];
   pendingStudentIds: string[];
+  /** Home language of students in this class (e.g. 'en') */
+  homeLanguage: LanguageCode;
+  /** Language kids in this class are learning (e.g. 'te') */
+  learningLanguage: LanguageCode;
+  /** curriculumWords docIds added by the teacher beyond mother curriculum */
+  addedWordIds: string[];
+  /** curriculumWords docIds removed from the mother curriculum for this class */
+  removedWordIds: string[];
   createdAt: Timestamp;
 }
 
@@ -115,24 +123,36 @@ export interface ProjectDoc {
 
 export interface MotherCurriculumDoc {
   grade: string; // '1', '2', '3', '4', '5'
-  wordIds: string[]; // References to curriculumWords
+  wordIds: string[]; // Firestore docIds for curriculumWords in this grade
+  levelCount: number; // max level number in this grade
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 
+export interface AudioUrlMap {
+  word: Record<string, string | null>;
+  meaning: Record<string, string | null>;
+  sentence: Record<string, string | null>;
+}
+
 export interface CurriculumWordDoc {
+  numericId: number;         // 1–189, sequential; used by kid app for wordProgress
+  grade: number;             // 1–5
+  level: number;             // 1–4 within grade
+  orderInLevel: number;      // 1–10 position within level
+  wordType: 'NS360' | 'GQD';
   source: 'mother' | 'teacher';
-  createdBy: string; // UID (admin or teacher)
-  word: Record<LanguageCode, string>;
-  translations: Record<LanguageCode, string>;
-  meaning: Record<LanguageCode, string>;
-  sentence: Record<LanguageCode, string>;
-  imageUrl?: string;
-  imageStoragePath?: string;
-  category: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdBy: string;         // UID (admin/seed)
+  word: Record<string, string>;       // { te, en, hi, mr, es, fr }
+  meaning: Record<string, string>;    // definition per language; starts empty
+  sentence: Record<string, string>;   // { te, en, hi, mr, es, fr }
+  imageUrl: string | null;
+  imageStoragePath: string | null;
+  audioUrl: AudioUrlMap;             // null until pre-recorded
+  difficulty: 'Low' | 'Medium' | 'High';
+  active: boolean;
+  createdAt: Timestamp | string;
+  updatedAt: Timestamp | string;
 }
 
 export interface TeacherCurriculumDoc {

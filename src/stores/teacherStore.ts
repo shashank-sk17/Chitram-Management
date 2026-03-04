@@ -151,12 +151,17 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
       pendingStudentIds: arrayRemove(studentId),
     });
 
-    // Update student document
+    // Update both /students/{uid} and /users/{uid} so the kid app reads the correct state
     await updateDoc(doc(db, 'students', studentId), {
       classId,
       classIds: arrayUnion(classId),
       kidType: 'classroom',
     });
+    await updateDoc(doc(db, 'users', studentId), {
+      classId,
+      classIds: arrayUnion(classId),
+      kidType: 'classroom',
+    }).catch(() => {}); // non-fatal if /users/{uid} doesn't exist for this student type
   },
 
   // Reject a pending student
@@ -167,12 +172,17 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
       pendingStudentIds: arrayRemove(studentId),
     });
 
-    // Update student document to remove pending status
+    // Update both /students/{uid} and /users/{uid} so the kid app reads the correct state
     await updateDoc(doc(db, 'students', studentId), {
       classId: null,
       classIds: arrayRemove(classId),
       kidType: 'individual',
     });
+    await updateDoc(doc(db, 'users', studentId), {
+      classId: null,
+      classIds: arrayRemove(classId),
+      kidType: 'individual',
+    }).catch(() => {}); // non-fatal if /users/{uid} doesn't exist for this student type
   },
 
   // Get students for a specific class (approved only)

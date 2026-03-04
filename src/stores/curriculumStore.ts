@@ -69,9 +69,10 @@ export const useCurriculumStore = create<CurriculumState>((set, get) => ({
                   id: gradeId,
                   grade,
                   wordIds: [],
+                  levelCount: 0,
                   createdAt: new Date() as any,
                   updatedAt: new Date() as any,
-                },
+                } as MotherCurriculumDoc & { id: string },
               },
               loadingMotherCurriculum: false,
             }));

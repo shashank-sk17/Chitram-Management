@@ -6,6 +6,9 @@ import { useTeacherStore } from '../../stores/teacherStore';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { PendingStudentsModal } from '../../components/teacher/PendingStudentsModal';
+import { ClassCurriculumEditor } from '../../components/teacher/ClassCurriculumEditor';
+import { EditLanguagesModal } from '../../components/teacher/EditLanguagesModal';
+import { deleteClass } from '../../services/firebase/teacher';
 import type { StudentDoc, AssignmentDoc } from '../../types/firestore';
 
 function CopyCodeButton({ code }: { code: string }) {
@@ -60,7 +63,10 @@ export default function ClassDetailPage() {
   } = useTeacherStore();
 
   const [showPending, setShowPending] = useState(false);
-  const [tab, setTab] = useState<'students' | 'assignments'>('students');
+  const [showEditLanguages, setShowEditLanguages] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<'students' | 'curriculum' | 'assignments'>('students');
 
   // Ensure store is populated if navigated directly
   useEffect(() => {
@@ -131,13 +137,58 @@ export default function ClassDetailPage() {
               <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark mb-xs">
                 {classData.name}
               </h1>
-              <p className="font-baloo text-md text-text-muted">Grade {classData.grade}</p>
+              <div className="flex items-center gap-sm flex-wrap">
+                <p className="font-baloo text-md text-text-muted">Grade {classData.grade}</p>
+                {classData.homeLanguage && classData.learningLanguage && (
+                  <div className="flex items-center gap-xs">
+                    <span className="font-baloo text-xs bg-white/70 border border-primary/20 text-primary px-sm py-xs rounded-full font-semibold">
+                      {classData.homeLanguage.toUpperCase()} → {classData.learningLanguage.toUpperCase()}
+                    </span>
+                    <button
+                      onClick={() => setShowEditLanguages(true)}
+                      className="text-text-muted hover:text-primary transition-colors text-sm"
+                      title="Edit languages"
+                    >
+                      ✏
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-col items-start sm:items-end gap-sm">
               <div className="flex items-center gap-xs">
                 <span className="font-baloo text-xs text-text-muted">Class Code:</span>
                 <CopyCodeButton code={classData.code} />
               </div>
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="font-baloo text-xs text-error/70 hover:text-error transition-colors"
+                >
+                  Delete class
+                </button>
+              ) : (
+                <div className="flex items-center gap-xs bg-rose-light border border-error/30 rounded-lg px-sm py-xs">
+                  <span className="font-baloo text-xs text-error">Delete permanently?</span>
+                  <button
+                    onClick={async () => {
+                      setDeleting(true);
+                      await deleteClass(classId!);
+                      navigate('/teacher/classes');
+                    }}
+                    disabled={deleting}
+                    className="font-baloo text-xs font-bold text-error hover:underline disabled:opacity-50"
+                  >
+                    {deleting ? 'Deleting...' : 'Yes, delete'}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="font-baloo text-xs text-text-muted hover:text-text-dark"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               {pendingStudents.length > 0 && (
                 <button
                   onClick={() => setShowPending(true)}
@@ -178,7 +229,7 @@ export default function ClassDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-sm mb-lg border-b-2 border-divider">
-        {(['students', 'assignments'] as const).map(t => (
+        {([ 'students', 'curriculum', 'assignments'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -188,7 +239,9 @@ export default function ClassDetailPage() {
                 : 'border-transparent text-text-muted hover:text-text-dark'
             }`}
           >
-            {t === 'students' ? `Students (${approvedStudents.length})` : `Assignments (${classAssignments.length})`}
+            {t === 'students'    ? `Students (${approvedStudents.length})`
+             : t === 'curriculum' ? 'Curriculum'
+             :                     `Assignments (${classAssignments.length})`}
           </button>
         ))}
       </div>
@@ -247,6 +300,30 @@ export default function ClassDetailPage() {
           )
         )}
 
+        {/* ── Curriculum tab ── */}
+        {tab === 'curriculum' && classId && (
+          <div className="flex flex-col gap-md">
+            <div className="flex items-center justify-between flex-wrap gap-sm">
+              <div>
+                <h2 className="font-baloo font-bold text-lg text-text-dark">
+                  Grade {classData.grade} Curriculum — {classData.name}
+                </h2>
+                <p className="font-baloo text-sm text-text-muted">
+                  Customise which words kids in this class see. Changes apply on next sign-in.
+                </p>
+              </div>
+            </div>
+            <ClassCurriculumEditor
+              classId={classId}
+              grade={classData.grade}
+              learningLanguage={classData.learningLanguage ?? 'te'}
+              homeLanguage={classData.homeLanguage ?? 'en'}
+              addedWordIds={classData.addedWordIds ?? []}
+              removedWordIds={classData.removedWordIds ?? []}
+            />
+          </div>
+        )}
+
         {/* ── Assignments tab ── */}
         {tab === 'assignments' && (
           classAssignments.length === 0 ? (
@@ -297,6 +374,17 @@ export default function ClassDetailPage() {
           onClose={() => setShowPending(false)}
           classId={classId}
           className={classData.name}
+        />
+      )}
+
+      {/* Edit languages modal */}
+      {classId && classData.homeLanguage && classData.learningLanguage && (
+        <EditLanguagesModal
+          isOpen={showEditLanguages}
+          onClose={() => setShowEditLanguages(false)}
+          classId={classId}
+          currentHomeLanguage={classData.homeLanguage}
+          currentLearningLanguage={classData.learningLanguage}
         />
       )}
     </div>

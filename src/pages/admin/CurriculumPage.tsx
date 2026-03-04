@@ -1,101 +1,201 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../features/auth/hooks/useAuth';
-import { useCurriculumStore } from '../../stores/curriculumStore';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
-import { WordCreationForm } from '../../components/curriculum/WordCreationForm';
 import {
-  addWordToMotherCurriculum,
-  removeWordFromMotherCurriculum,
-  getCurriculumWords,
-  createMotherCurriculum,
+  getWordsByGradeLevel,
+  toggleWordActive,
+  updateCurriculumWord,
 } from '../../services/firebase/curriculum';
 import type { CurriculumWordDoc } from '../../types/firestore';
 
 const GRADES = ['1', '2', '3', '4', '5'];
+// Max levels per grade (Grade 3 has 3 levels, others have 4)
+const GRADE_LEVEL_COUNTS: Record<string, number> = { '1': 4, '2': 4, '3': 3, '4': 4, '5': 4 };
+
+const DIFFICULTY_COLORS: Record<string, string> = {
+  Low: 'bg-mint-light text-secondary',
+  Medium: 'bg-sunshine-light text-warning',
+  High: 'bg-rose-light text-error',
+};
+
+interface WordCardProps {
+  word: CurriculumWordDoc & { id: string };
+  onToggleActive: (id: string, active: boolean) => void;
+  onEditMeaning: (word: CurriculumWordDoc & { id: string }) => void;
+  busy: boolean;
+}
+
+function WordCard({ word, onToggleActive, onEditMeaning, busy }: WordCardProps) {
+  return (
+    <Card className="relative">
+      {/* Badge row */}
+      <div className="flex gap-xs mb-sm">
+        <span className={`px-sm py-xs rounded-full font-baloo text-xs font-bold ${
+          word.wordType === 'NS360' ? 'bg-lavender-light text-primary' : 'bg-peach-light text-warning'
+        }`}>
+          {word.wordType}
+        </span>
+        <span className={`px-sm py-xs rounded-full font-baloo text-xs ${DIFFICULTY_COLORS[word.difficulty] ?? ''}`}>
+          {word.difficulty}
+        </span>
+        <span className={`ml-auto px-sm py-xs rounded-full font-baloo text-xs ${
+          word.active ? 'bg-mint-light text-secondary' : 'bg-rose-light text-error'
+        }`}>
+          {word.active ? 'Active' : 'Disabled'}
+        </span>
+      </div>
+
+      {/* Word */}
+      <div className="mb-sm">
+        <h3 className="font-baloo font-bold text-xxl text-text-dark">#{word.numericId} {word.word.te}</h3>
+        <p className="font-baloo text-body text-text-muted">{word.word.en}</p>
+      </div>
+
+      {/* Meaning */}
+      {word.meaning?.te ? (
+        <p className="font-baloo text-sm text-text-body italic mb-sm">{word.meaning.te}</p>
+      ) : (
+        <p className="font-baloo text-sm text-text-muted italic mb-sm">— meaning not set —</p>
+      )}
+
+      {/* Sentence */}
+      {word.sentence?.te && (
+        <p className="font-baloo text-sm text-text-muted mb-md">"{word.sentence.te}"</p>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-sm">
+        <button
+          onClick={() => onEditMeaning(word)}
+          className="flex-1 px-sm py-xs rounded-lg border border-divider font-baloo text-sm text-text-body hover:bg-bg-light transition-colors"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => onToggleActive(word.id, !word.active)}
+          disabled={busy}
+          className={`flex-1 px-sm py-xs rounded-lg font-baloo text-sm transition-colors ${
+            word.active
+              ? 'border border-error text-error hover:bg-rose-light'
+              : 'border border-secondary text-secondary hover:bg-mint-light'
+          } disabled:opacity-50`}
+        >
+          {word.active ? 'Disable' : 'Enable'}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+interface EditMeaningModalProps {
+  word: (CurriculumWordDoc & { id: string }) | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function EditMeaningModal({ word, onClose, onSaved }: EditMeaningModalProps) {
+  const [meaning, setMeaning] = useState({ te: '', en: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (word) setMeaning({ te: word.meaning?.te ?? '', en: word.meaning?.en ?? '' });
+  }, [word]);
+
+  if (!word) return null;
+
+  async function handleSave() {
+    if (!word) return;
+    setSaving(true);
+    try {
+      await updateCurriculumWord(word.id, { meaning });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      alert(e.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-md">
+      <div className="bg-white rounded-xxl shadow-xl max-w-lg w-full p-xl">
+        <h2 className="font-baloo font-bold text-xl text-text-dark mb-md">
+          Edit Meaning — {word.word.te} / {word.word.en}
+        </h2>
+        <div className="mb-md">
+          <label className="block font-baloo text-sm text-text-muted mb-xs">Telugu meaning (te)</label>
+          <input
+            className="w-full border border-divider rounded-lg px-md py-sm font-baloo text-body"
+            value={meaning.te}
+            onChange={e => setMeaning(m => ({ ...m, te: e.target.value }))}
+            placeholder="అర్థం..."
+          />
+        </div>
+        <div className="mb-lg">
+          <label className="block font-baloo text-sm text-text-muted mb-xs">English meaning (en)</label>
+          <input
+            className="w-full border border-divider rounded-lg px-md py-sm font-baloo text-body"
+            value={meaning.en}
+            onChange={e => setMeaning(m => ({ ...m, en: e.target.value }))}
+            placeholder="Definition..."
+          />
+        </div>
+        <div className="flex gap-md">
+          <Button title="Cancel" onPress={onClose} variant="secondary" size="sm" />
+          <Button title={saving ? 'Saving…' : 'Save'} onPress={handleSave} variant="primary" size="sm" disabled={saving} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminCurriculumPage() {
   const { user, claims } = useAuth();
-  const {
-    motherCurriculum,
-    listenToMotherCurriculum,
-    loadingMotherCurriculum,
-  } = useCurriculumStore();
 
   const [selectedGrade, setSelectedGrade] = useState('1');
+  const [selectedLevel, setSelectedLevel] = useState(1);
   const [words, setWords] = useState<Array<CurriculumWordDoc & { id: string }>>([]);
-  const [loadingWords, setLoadingWords] = useState(false);
-  const [showCreateWord, setShowCreateWord] = useState(false);
-  const [removingWordId, setRemovingWordId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editWord, setEditWord] = useState<(CurriculumWordDoc & { id: string }) | null>(null);
 
-  // Only super admin can manage mother curriculum
   const canManageCurriculum = claims?.role === 'admin';
+  const levelCount = GRADE_LEVEL_COUNTS[selectedGrade] ?? 4;
+  const ns360Words = words.filter(w => w.wordType === 'NS360');
+  const gqdWords = words.filter(w => w.wordType === 'GQD');
 
-  // Listen to mother curriculum for all grades
   useEffect(() => {
-    if (canManageCurriculum) {
-      const unsubscribe = listenToMotherCurriculum(GRADES);
-      return unsubscribe;
-    }
-  }, [canManageCurriculum]);
+    // Reset level if it exceeds the new grade's level count
+    if (selectedLevel > levelCount) setSelectedLevel(1);
+  }, [selectedGrade]);
 
-  // Load words for selected grade
   useEffect(() => {
-    loadWordsForGrade();
-  }, [selectedGrade, motherCurriculum]);
+    loadWords();
+  }, [selectedGrade, selectedLevel]);
 
-  async function loadWordsForGrade() {
-    const curriculum = motherCurriculum[selectedGrade];
-    if (!curriculum || curriculum.wordIds.length === 0) {
-      setWords([]);
-      return;
-    }
-
-    setLoadingWords(true);
+  async function loadWords() {
+    setLoading(true);
     try {
-      const wordsData = await getCurriculumWords(curriculum.wordIds);
-      setWords(wordsData);
-    } catch (error) {
-      console.error('Error loading words:', error);
+      const data = await getWordsByGradeLevel(Number(selectedGrade), selectedLevel);
+      setWords(data);
+    } catch (err) {
+      console.error('Error loading words:', err);
     } finally {
-      setLoadingWords(false);
+      setLoading(false);
     }
   }
 
-  async function handleWordCreated(wordId: string) {
+  async function handleToggleActive(wordId: string, active: boolean) {
+    setBusyId(wordId);
     try {
-      // Check if curriculum exists for this grade
-      const curriculum = motherCurriculum[selectedGrade];
-      if (!curriculum) {
-        // Create curriculum if it doesn't exist
-        await createMotherCurriculum(selectedGrade);
-      }
-
-      // Add word to mother curriculum
-      await addWordToMotherCurriculum(selectedGrade, wordId);
-
-      // Reload words
-      await loadWordsForGrade();
-    } catch (error: any) {
-      console.error('Error adding word to curriculum:', error);
-      alert(error.message || 'Failed to add word to curriculum');
-    }
-  }
-
-  async function handleRemoveWord(wordId: string) {
-    if (!confirm('Are you sure you want to remove this word from the curriculum?')) {
-      return;
-    }
-
-    setRemovingWordId(wordId);
-    try {
-      await removeWordFromMotherCurriculum(selectedGrade, wordId);
-      await loadWordsForGrade();
-    } catch (error: any) {
-      console.error('Error removing word:', error);
-      alert(error.message || 'Failed to remove word');
+      await toggleWordActive(wordId, active);
+      setWords(prev => prev.map(w => w.id === wordId ? { ...w, active } : w));
+    } catch (e: any) {
+      alert(e.message || 'Failed to update word');
     } finally {
-      setRemovingWordId(null);
+      setBusyId(null);
     }
   }
 
@@ -106,9 +206,7 @@ export default function AdminCurriculumPage() {
           <div className="w-24 h-24 rounded-full bg-rose-light flex items-center justify-center mx-auto mb-md">
             <span className="text-5xl">🚫</span>
           </div>
-          <h2 className="font-baloo font-bold text-xl text-text-dark mb-sm">
-            Access Denied
-          </h2>
+          <h2 className="font-baloo font-bold text-xl text-text-dark mb-sm">Access Denied</h2>
           <p className="font-baloo text-body text-text-muted mb-lg">
             Only Super Admins can manage the mother curriculum
           </p>
@@ -118,184 +216,129 @@ export default function AdminCurriculumPage() {
     );
   }
 
-  const currentCurriculum = motherCurriculum[selectedGrade];
-  const wordCount = currentCurriculum?.wordIds.length || 0;
-
   return (
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm mb-xl">
-          <div>
-            <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
-              Mother Curriculum
-            </h1>
-            <p className="font-baloo text-sm sm:text-body text-text-muted">
-              {user?.email} • Super Admin
-            </p>
-          </div>
-        </div>
-
-        {/* Grade Selector */}
-        <div className="mb-xl">
-          <h2 className="font-baloo font-bold text-xl text-text-dark mb-md">
-            Select Grade
-          </h2>
-          <div className="flex gap-sm sm:gap-md">
-            {GRADES.map((grade) => {
-              const curriculum = motherCurriculum[grade];
-              const count = curriculum?.wordIds.length || 0;
-
-              return (
-                <button
-                  key={grade}
-                  onClick={() => setSelectedGrade(grade)}
-                  className={`flex-1 px-sm sm:px-lg py-sm sm:py-lg rounded-xl border-2 font-baloo transition-colors ${
-                    selectedGrade === grade
-                      ? 'border-primary bg-lavender-light'
-                      : 'border-divider bg-white hover:border-primary/50'
-                  }`}
-                >
-                  <div className="text-center">
-                    <p className={`font-bold text-xl sm:text-hero ${
-                      selectedGrade === grade ? 'text-primary' : 'text-text-dark'
-                    }`}>
-                      {grade}
-                    </p>
-                    <p className="text-xs sm:text-md text-text-muted">
-                      {count} {count === 1 ? 'word' : 'words'}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-sm mb-lg">
-          <h2 className="font-baloo font-bold text-xl text-text-dark">
-            Grade {selectedGrade} Vocabulary ({wordCount} words)
-          </h2>
-          <Button
-            title="➕ Add Word"
-            onPress={() => setShowCreateWord(true)}
-            variant="primary"
-            size="sm"
-            className="w-auto self-start sm:self-auto"
-            icon={<span>📝</span>}
-          />
-        </div>
-
-        {/* Loading State */}
-        {(loadingMotherCurriculum || loadingWords) && (
-          <div className="flex justify-center items-center h-64">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* Word List */}
-        {!loadingMotherCurriculum && !loadingWords && (
-          <>
-            {words.length === 0 ? (
-              <Card className="text-center py-lg sm:py-xxl">
-                <div className="w-24 h-24 rounded-full bg-lavender-light flex items-center justify-center mx-auto mb-md">
-                  <span className="text-4xl sm:text-5xl">📚</span>
-                </div>
-                <h3 className="font-baloo font-bold text-lg sm:text-xl text-text-dark mb-sm">
-                  No Words Yet
-                </h3>
-                <p className="font-baloo text-sm sm:text-body text-text-muted mb-lg">
-                  Start building the vocabulary for Grade {selectedGrade}
-                </p>
-                <Button
-                  title="Add Your First Word"
-                  onPress={() => setShowCreateWord(true)}
-                  variant="primary"
-                />
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md sm:gap-lg">
-                {words.map((word) => (
-                  <Card key={word.id} className="relative">
-                    {/* Image */}
-                    {word.imageUrl && (
-                      <div className="mb-md">
-                        <img
-                          src={word.imageUrl}
-                          alt={word.word.en || 'Word image'}
-                          className="w-full h-48 object-cover rounded-lg"
-                        />
-                      </div>
-                    )}
-
-                    {/* Word Details */}
-                    <div className="mb-md">
-                      <h3 className="font-baloo font-bold text-lg text-text-dark mb-sm">
-                        {word.word.en || Object.values(word.word).find(w => w) || 'Untitled'}
-                      </h3>
-                      <div className="flex gap-sm mb-sm">
-                        <span className="px-md py-sm bg-lavender-light rounded-full font-baloo text-sm text-primary">
-                          {word.category}
-                        </span>
-                        <span className={`px-md py-sm rounded-full font-baloo text-sm ${
-                          word.difficulty === 'easy'
-                            ? 'bg-mint-light text-secondary'
-                            : word.difficulty === 'medium'
-                            ? 'bg-sunshine-light text-warning'
-                            : 'bg-rose-light text-error'
-                        }`}>
-                          {word.difficulty}
-                        </span>
-                      </div>
-                      {word.meaning.en && (
-                        <p className="font-baloo text-md text-text-muted">
-                          {word.meaning.en}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Translations */}
-                    <div className="mb-md">
-                      <p className="font-baloo text-sm text-text-muted mb-sm">Translations:</p>
-                      <div className="flex flex-wrap gap-xs">
-                        {Object.entries(word.translations)
-                          .filter(([_, text]) => text)
-                          .slice(0, 4)
-                          .map(([lang, text]) => (
-                            <span
-                              key={lang}
-                              className="px-sm py-xs bg-peach-light rounded font-baloo text-xs text-text-body"
-                            >
-                              {lang.toUpperCase()}: {text}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-
-                    {/* Remove Button */}
-                    <Button
-                      title={removingWordId === word.id ? 'Removing...' : 'Remove'}
-                      onPress={() => handleRemoveWord(word.id)}
-                      variant="danger"
-                      size="sm"
-                      disabled={removingWordId === word.id}
-                      loading={removingWordId === word.id}
-                    />
-                  </Card>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Word Creation Modal */}
-        <WordCreationForm
-          isOpen={showCreateWord}
-          onClose={() => setShowCreateWord(false)}
-          onSuccess={handleWordCreated}
-          source="mother"
-          grade={selectedGrade}
-        />
+    <div className="max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="mb-xl">
+        <h1 className="font-baloo font-bold text-xxl text-text-dark">Mother Curriculum</h1>
+        <p className="font-baloo text-body text-text-muted">{user?.email} • Super Admin</p>
       </div>
+
+      {/* Grade + Level selectors */}
+      <div className="flex flex-wrap gap-md mb-xl">
+        <div>
+          <p className="font-baloo font-semibold text-sm text-text-muted mb-xs uppercase tracking-wide">Grade</p>
+          <div className="flex gap-sm">
+            {GRADES.map(g => (
+              <button
+                key={g}
+                onClick={() => setSelectedGrade(g)}
+                className={`w-10 h-10 rounded-xl border-2 font-baloo font-bold transition-colors ${
+                  selectedGrade === g
+                    ? 'border-primary bg-lavender-light text-primary'
+                    : 'border-divider bg-white text-text-dark hover:border-primary/50'
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="font-baloo font-semibold text-sm text-text-muted mb-xs uppercase tracking-wide">Level</p>
+          <div className="flex gap-sm">
+            {Array.from({ length: levelCount }, (_, i) => i + 1).map(l => (
+              <button
+                key={l}
+                onClick={() => setSelectedLevel(l)}
+                className={`w-10 h-10 rounded-xl border-2 font-baloo font-bold transition-colors ${
+                  selectedLevel === l
+                    ? 'border-primary bg-lavender-light text-primary'
+                    : 'border-divider bg-white text-text-dark hover:border-primary/50'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex justify-center items-center h-64">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Grade/Level summary */}
+      {!loading && (
+        <p className="font-baloo text-sm text-text-muted mb-lg">
+          Grade {selectedGrade} · Level {selectedLevel} — {ns360Words.length} NS360 words, {gqdWords.length} GQD words
+        </p>
+      )}
+
+      {/* NS360 + GQD columns */}
+      {!loading && words.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-xl">
+          {/* NS360 column */}
+          <div>
+            <h2 className="font-baloo font-bold text-lg text-primary mb-md">
+              NS360 Words ({ns360Words.length})
+            </h2>
+            <div className="flex flex-col gap-md">
+              {ns360Words.map(word => (
+                <WordCard
+                  key={word.id}
+                  word={word}
+                  onToggleActive={handleToggleActive}
+                  onEditMeaning={setEditWord}
+                  busy={busyId === word.id}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* GQD column */}
+          <div>
+            <h2 className="font-baloo font-bold text-lg text-warning mb-md">
+              GQD Words ({gqdWords.length})
+            </h2>
+            <div className="flex flex-col gap-md">
+              {gqdWords.map(word => (
+                <WordCard
+                  key={word.id}
+                  word={word}
+                  onToggleActive={handleToggleActive}
+                  onEditMeaning={setEditWord}
+                  busy={busyId === word.id}
+                />
+              ))}
+              {gqdWords.length === 0 && (
+                <p className="font-baloo text-sm text-text-muted italic">No GQD words in this level.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && words.length === 0 && (
+        <Card className="text-center py-xxl">
+          <span className="text-5xl mb-md block">📚</span>
+          <h3 className="font-baloo font-bold text-xl text-text-dark mb-sm">No words found</h3>
+          <p className="font-baloo text-body text-text-muted">
+            Grade {selectedGrade} Level {selectedLevel} has no vocabulary yet. Run the seed script to populate.
+          </p>
+        </Card>
+      )}
+
+      {/* Edit meaning modal */}
+      <EditMeaningModal
+        word={editWord}
+        onClose={() => setEditWord(null)}
+        onSaved={loadWords}
+      />
+    </div>
   );
 }

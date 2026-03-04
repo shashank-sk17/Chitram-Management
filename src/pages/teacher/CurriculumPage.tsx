@@ -309,12 +309,12 @@ export default function TeacherCurriculumPage() {
                         </h4>
                         <div className="flex gap-sm mb-sm">
                           <span className="px-md py-sm bg-lavender-light rounded-full font-baloo text-sm text-primary">
-                            {word.category}
+                            {word.wordType}
                           </span>
                           <span className={`px-md py-sm rounded-full font-baloo text-sm ${
-                            word.difficulty === 'easy'
+                            word.difficulty === 'Low'
                               ? 'bg-mint-light text-secondary'
-                              : word.difficulty === 'medium'
+                              : word.difficulty === 'Medium'
                               ? 'bg-sunshine-light text-warning'
                               : 'bg-rose-light text-error'
                           }`}>
@@ -359,12 +359,12 @@ export default function TeacherCurriculumPage() {
                         </h4>
                         <div className="flex gap-sm mb-sm">
                           <span className="px-md py-sm bg-peach-light rounded-full font-baloo text-sm text-accent">
-                            {word.category}
+                            {word.wordType}
                           </span>
                           <span className={`px-md py-sm rounded-full font-baloo text-sm ${
-                            word.difficulty === 'easy'
+                            word.difficulty === 'Low'
                               ? 'bg-mint-light text-secondary'
-                              : word.difficulty === 'medium'
+                              : word.difficulty === 'Medium'
                               ? 'bg-sunshine-light text-warning'
                               : 'bg-rose-light text-error'
                           }`}>

@@ -2,13 +2,15 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc,
+  deleteDoc,
   serverTimestamp,
   query,
   where,
   getDocs,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import type { ClassDoc, AssignmentDoc } from '../../types/firestore';
+import type { ClassDoc, AssignmentDoc, LanguageCode } from '../../types/firestore';
 
 // Generate a 6-character class code (excludes I, O, 0, 1 to avoid confusion)
 export function generateClassCode(): string {
@@ -51,6 +53,8 @@ export async function createClass(data: {
   grade: string;
   teacherId: string;
   schoolId: string;
+  homeLanguage: LanguageCode;
+  learningLanguage: LanguageCode;
 }): Promise<{ id: string; code: string }> {
   const code = await generateUniqueClassCode();
   const classRef = doc(collection(db, 'classes'));
@@ -63,10 +67,23 @@ export async function createClass(data: {
     code,
     studentIds: [],
     pendingStudentIds: [],
+    homeLanguage: data.homeLanguage,
+    learningLanguage: data.learningLanguage,
+    addedWordIds: [],
+    removedWordIds: [],
     createdAt: serverTimestamp(),
   });
 
   return { id: classRef.id, code };
+}
+
+// Update a class's curriculum customisation (teacher-only; Firestore rules enforce ownership)
+export async function updateClassCurriculum(
+  classId: string,
+  addedWordIds: string[],
+  removedWordIds: string[]
+): Promise<void> {
+  await updateDoc(doc(db, 'classes', classId), { addedWordIds, removedWordIds });
 }
 
 // Create an assignment
@@ -119,4 +136,18 @@ export async function getTeacherAssignments(teacherId: string): Promise<Array<As
   });
 
   return assignments;
+}
+
+// Delete a class (teacher must own the class — enforced by Firestore rules)
+export async function deleteClass(classId: string): Promise<void> {
+  await deleteDoc(doc(db, 'classes', classId));
+}
+
+// Update the home/learning language of a class
+export async function updateClassLanguages(
+  classId: string,
+  homeLanguage: LanguageCode,
+  learningLanguage: LanguageCode,
+): Promise<void> {
+  await updateDoc(doc(db, 'classes', classId), { homeLanguage, learningLanguage });
 }

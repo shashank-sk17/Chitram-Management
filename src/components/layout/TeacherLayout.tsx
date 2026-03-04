@@ -7,7 +7,6 @@ interface TeacherLayoutProps {
 
 const teacherNavItems = [
   { path: '', label: 'Dashboard', icon: '🏠' },
-  { path: '/teacher/curriculum', label: 'Curriculum', icon: '📖' },
   { path: '/teacher/classes', label: 'Classes', icon: '👨‍🏫' },
   { path: '/teacher/assignments', label: 'Assignments', icon: '📝' },
   { path: '/teacher/students', label: 'Students', icon: '👦' },

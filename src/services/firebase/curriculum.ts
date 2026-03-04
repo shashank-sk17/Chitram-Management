@@ -104,6 +104,86 @@ export async function getCurriculumWord(wordId: string): Promise<(CurriculumWord
   return null;
 }
 
+export async function getWordsByGradeLevel(grade: number, level: number): Promise<Array<CurriculumWordDoc & { id: string }>> {
+  const q = query(
+    collection(db, 'curriculumWords'),
+    where('grade', '==', grade),
+    where('level', '==', level),
+    where('source', '==', 'mother'),
+  );
+  const snapshot = await getDocs(q);
+  const words = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CurriculumWordDoc & { id: string }));
+  // Sort: NS360 first (ordered by orderInLevel), then GQD
+  words.sort((a, b) => {
+    if (a.wordType !== b.wordType) return a.wordType === 'NS360' ? -1 : 1;
+    return (a.orderInLevel ?? 0) - (b.orderInLevel ?? 0);
+  });
+  return words;
+}
+
+export async function toggleWordActive(wordId: string, active: boolean): Promise<void> {
+  await updateDoc(doc(db, 'curriculumWords', wordId), {
+    active,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Fetch all active curriculum words (189 max — client-side filtering is fine at this scale)
+export async function getAllCurriculumWords(): Promise<Array<CurriculumWordDoc & { id: string }>> {
+  const q = query(collection(db, 'curriculumWords'), where('active', '==', true));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CurriculumWordDoc & { id: string }));
+}
+
+// Update imageUrl on a teacher-created custom word
+export async function updateCustomWordImage(wordId: string, imageUrl: string): Promise<void> {
+  await updateDoc(doc(db, 'curriculumWords', wordId), { imageUrl, updatedAt: serverTimestamp() });
+}
+
+// Update the sentence map on a teacher-created custom word
+export async function updateCustomWordSentences(wordId: string, sentences: Record<string, string>): Promise<void> {
+  await updateDoc(doc(db, 'curriculumWords', wordId), { sentence: sentences, updatedAt: serverTimestamp() });
+}
+
+// Create a new teacher-owned custom word and return its Firestore ID
+export async function createTeacherWord(data: {
+  grade: number;
+  level: number;
+  learningLanguage: string;
+  learningWord: string;
+  homeLanguage: string;
+  homeWord: string;
+  difficulty: 'Low' | 'Medium' | 'High';
+  createdBy: string;
+}): Promise<string> {
+  const wordRef = doc(collection(db, 'curriculumWords'));
+  const wordMap: Record<string, string> = {};
+  wordMap[data.learningLanguage] = data.learningWord;
+  if (data.homeLanguage !== data.learningLanguage) {
+    wordMap[data.homeLanguage] = data.homeWord;
+  }
+  await setDoc(wordRef, {
+    numericId: 0,
+    grade: data.grade,
+    level: data.level,
+    orderInLevel: 0,
+    wordType: 'GQD',
+    source: 'teacher',
+    createdBy: data.createdBy,
+    word: wordMap,
+    meaning: {},
+    sentence: {},
+    imageUrl: null,
+    imageStoragePath: null,
+    audioUrl: { word: {}, meaning: {}, sentence: {} },
+    difficulty: data.difficulty,
+    active: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return wordRef.id;
+}
+
 export async function getCurriculumWords(wordIds: string[]): Promise<Array<CurriculumWordDoc & { id: string }>> {
   if (wordIds.length === 0) return [];
 
