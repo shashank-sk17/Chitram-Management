@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card } from '../../components/common/Card';
+import { StatCardSkeleton, RowSkeleton } from '../../components/common/Skeleton';
 import { TimePeriodSelector, type TimePeriod } from '../../components/common/TimePeriodSelector';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import {
@@ -15,6 +16,8 @@ interface StudentRow {
   email: string;
   avatarColor: string;
   avgAccuracy: number;
+  quizAccuracy: number;
+  drawingAccuracy: number;
   learnedWords: number;
   totalAttempts: number;
 }
@@ -82,6 +85,8 @@ export default function AnalyticsPage() {
         email: s.email || '',
         avatarColor: s.avatarColor || '#7C81FF',
         avgAccuracy: s.analytics?.averageAccuracy ?? 0,
+        quizAccuracy: s.analytics?.quizAccuracy ?? 0,
+        drawingAccuracy: s.analytics?.drawingAccuracy ?? 0,
         learnedWords: s.analytics?.learnedWords ?? 0,
         totalAttempts: s.analytics?.totalAttempts ?? 0,
       }));
@@ -135,17 +140,27 @@ export default function AnalyticsPage() {
       </motion.div>
 
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="space-y-lg">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-sm sm:gap-md">
+            {[0, 1, 2, 3].map(i => <StatCardSkeleton key={i} />)}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-md sm:gap-lg">
+            <div className="bg-white rounded-2xl p-lg border border-divider">
+              <RowSkeleton rows={5} />
+            </div>
+            <div className="bg-white rounded-2xl p-lg border border-divider">
+              <RowSkeleton rows={5} />
+            </div>
+          </div>
         </div>
       ) : (
         <>
           {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-sm sm:gap-md mb-lg sm:mb-xl">
             {[
-              { label: 'Total Students', value: students.length, icon: '👨‍🎓', color: 'bg-gradient-to-br from-lavender-light to-primary/20' },
-              { label: activeLabel(period), value: students.length, icon: '✅', color: 'bg-gradient-to-br from-mint-light to-secondary/20' },
-              { label: 'Avg Accuracy', value: `${avgProgress}%`, icon: '📊', color: 'bg-gradient-to-br from-peach-light to-accent/20' },
+              { label: 'Total Students', value: students.length, icon: '👨‍🎓', color: 'bg-lavender-light' },
+              { label: activeLabel(period), value: students.length, icon: '✅', color: 'bg-mint-light' },
+              { label: 'Avg Accuracy', value: `${avgProgress}%`, icon: '📊', color: 'bg-peach-light' },
               { label: 'Assignments Done', value: completedThisPeriod, icon: '📝', color: 'bg-gradient-to-br from-lavender-light to-secondary/20' },
             ].map((stat, index) => (
               <motion.div
@@ -211,11 +226,19 @@ export default function AnalyticsPage() {
                             {student.learnedWords} words learned · {student.totalAttempts} attempts
                           </p>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <span className="font-baloo text-sm font-bold text-secondary">
-                            {student.avgAccuracy}%
-                          </span>
-                          <p className="font-baloo text-xs text-text-muted">accuracy</p>
+                        <div className="flex items-center gap-sm flex-shrink-0">
+                          <div className="text-right">
+                            <span className="font-baloo text-sm font-bold text-primary">
+                              {student.quizAccuracy}%
+                            </span>
+                            <p className="font-baloo text-xs text-text-muted">Quiz Acc</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-baloo text-sm font-bold text-accent">
+                              {student.drawingAccuracy}%
+                            </span>
+                            <p className="font-baloo text-xs text-text-muted">Drawing</p>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -245,7 +268,7 @@ export default function AnalyticsPage() {
                         key={student.id}
                         className="flex items-center gap-md p-md rounded-lg bg-gradient-to-r from-mint-light to-transparent hover:from-mint-light hover:to-mint-light/50 transition-all"
                       >
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center flex-shrink-0 shadow-md">
+                        <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center flex-shrink-0 shadow-md">
                           <span className="font-baloo font-extrabold text-lg text-white">
                             #{index + 1}
                           </span>
@@ -282,7 +305,7 @@ export default function AnalyticsPage() {
               transition={{ duration: 0.4, delay: 0.6 }}
               className="mt-md sm:mt-lg"
             >
-              <Card className="bg-gradient-to-r from-lavender-light to-mint-light border border-primary/10">
+              <Card className="bg-lavender-light/30 border border-primary/10">
                 <div className="flex flex-wrap items-center gap-lg">
                   <div className="text-center">
                     <p className="font-baloo font-extrabold text-xxl text-primary">{totalClasses}</p>

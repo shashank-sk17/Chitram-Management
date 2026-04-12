@@ -6,10 +6,14 @@ import { useTeacherStore } from '../../stores/teacherStore';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { PendingStudentsModal } from '../../components/teacher/PendingStudentsModal';
-import { ClassCurriculumEditor } from '../../components/teacher/ClassCurriculumEditor';
 import { EditLanguagesModal } from '../../components/teacher/EditLanguagesModal';
 import { deleteClass } from '../../services/firebase/teacher';
-import type { StudentDoc, AssignmentDoc } from '../../types/firestore';
+import {
+  getAnnouncementsForClass,
+  createAnnouncement,
+} from '../../services/firebase/announcements';
+import { useAssignmentStore } from '../../stores/assignmentStore';
+import type { StudentDoc, AnnouncementDoc } from '../../types/firestore';
 
 function CopyCodeButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -51,14 +55,13 @@ export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { listenToTeacherAssignments, getAssignmentsForClass } = useAssignmentStore();
   const {
     classes,
     listenToTeacherClasses,
     listenToClassStudents,
-    listenToTeacherAssignments,
     getStudentsForClass,
     getPendingStudentsForClass,
-    getAssignmentsForClass,
     loadingClasses,
   } = useTeacherStore();
 
@@ -66,7 +69,14 @@ export default function ClassDetailPage() {
   const [showEditLanguages, setShowEditLanguages] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [tab, setTab] = useState<'students' | 'curriculum' | 'assignments'>('students');
+  const [tab, setTab] = useState<'students' | 'curriculum' | 'assignments' | 'announcements'>('students');
+
+  // Announcements state
+  const [announcements, setAnnouncements] = useState<Array<{ id: string } & AnnouncementDoc>>([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+  const [announceTitle, setAnnounceTitle] = useState('');
+  const [announceBody, setAnnounceBody] = useState('');
+  const [posting, setPosting] = useState(false);
 
   // Ensure store is populated if navigated directly
   useEffect(() => {
@@ -85,10 +95,51 @@ export default function ClassDetailPage() {
     return unsub;
   }, [classId]);
 
+  useEffect(() => {
+    if (tab === 'announcements' && classId) {
+      loadAnnouncements();
+    }
+  }, [tab, classId]);
+
+  async function loadAnnouncements() {
+    if (!classId) return;
+    setLoadingAnnouncements(true);
+    try {
+      const data = await getAnnouncementsForClass(classId);
+      setAnnouncements(data);
+    } catch (e) {
+      console.error('Error loading announcements:', e);
+    } finally {
+      setLoadingAnnouncements(false);
+    }
+  }
+
+  async function handlePostAnnouncement() {
+    if (!classId || !user || !announceTitle.trim() || !announceBody.trim()) return;
+    setPosting(true);
+    try {
+      await createAnnouncement({
+        classId,
+        teacherUid: user.uid,
+        teacherName: user.displayName || user.email || 'Teacher',
+        title: announceTitle.trim(),
+        body: announceBody.trim(),
+        pinned: false,
+      });
+      setAnnounceTitle('');
+      setAnnounceBody('');
+      await loadAnnouncements();
+    } catch (e) {
+      console.error('Error posting announcement:', e);
+    } finally {
+      setPosting(false);
+    }
+  }
+
   const classData = classes.find(c => c.id === classId);
   const approvedStudents: Array<StudentDoc & { id: string }> = classId ? getStudentsForClass(classId) : [];
   const pendingStudents: Array<StudentDoc & { id: string }> = classId ? getPendingStudentsForClass(classId) : [];
-  const classAssignments: Array<AssignmentDoc & { id: string }> = classId ? getAssignmentsForClass(classId) : [];
+  const classAssignments = classId ? getAssignmentsForClass(classId) : [];
 
   if (loadingClasses) {
     return (
@@ -128,7 +179,7 @@ export default function ClassDetailPage() {
         transition={{ duration: 0.35 }}
         className="mb-xl"
       >
-        <Card className="bg-gradient-to-r from-lavender-light to-mint-light border border-primary/10">
+        <Card className="bg-lavender-light/30 border border-primary/10">
           <div className="flex flex-col sm:flex-row sm:items-center gap-md">
             <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-sm flex-shrink-0">
               <span className="text-3xl">🏫</span>
@@ -213,7 +264,7 @@ export default function ClassDetailPage() {
           { label: 'Students',           value: approvedStudents.length,                          icon: '👨‍🎓', color: 'from-lavender-light to-primary/10' },
           { label: 'Pending',            value: pendingStudents.length,                            icon: '⏳', color: 'from-peach-light to-accent/10' },
           { label: 'Active Assignments', value: classAssignments.filter(a => a.status === 'active').length,    icon: '📝', color: 'from-mint-light to-secondary/10' },
-          { label: 'Completed',          value: classAssignments.filter(a => a.status === 'completed').length, icon: '✅', color: 'from-lavender-light to-secondary/10' },
+          { label: 'Closed',             value: classAssignments.filter(a => a.status === 'closed').length,     icon: '✅', color: 'from-lavender-light to-secondary/10' },
         ].map((stat, i) => (
           <motion.div key={stat.label} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 + i * 0.05 }}>
             <Card className={`bg-gradient-to-br ${stat.color}`}>
@@ -228,20 +279,21 @@ export default function ClassDetailPage() {
       </motion.div>
 
       {/* Tabs */}
-      <div className="flex gap-sm mb-lg border-b-2 border-divider">
-        {([ 'students', 'curriculum', 'assignments'] as const).map(t => (
+      <div className="flex gap-sm mb-lg border-b-2 border-divider overflow-x-auto">
+        {([ 'students', 'curriculum', 'assignments', 'announcements'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`font-baloo font-semibold text-md pb-sm px-sm border-b-2 -mb-[2px] transition-colors capitalize ${
+            className={`font-baloo font-semibold text-md pb-sm px-sm border-b-2 -mb-[2px] transition-colors capitalize whitespace-nowrap ${
               tab === t
                 ? 'border-primary text-primary'
                 : 'border-transparent text-text-muted hover:text-text-dark'
             }`}
           >
-            {t === 'students'    ? `Students (${approvedStudents.length})`
-             : t === 'curriculum' ? 'Curriculum'
-             :                     `Assignments (${classAssignments.length})`}
+            {t === 'students'      ? `Students (${approvedStudents.length})`
+             : t === 'curriculum'   ? 'Curriculum'
+             : t === 'assignments'  ? `Assignments (${classAssignments.length})`
+             :                       'Announcements'}
           </button>
         ))}
       </div>
@@ -290,7 +342,7 @@ export default function ClassDetailPage() {
                       </p>
                       <p className="font-baloo text-xs text-text-muted">accuracy</p>
                       <p className="font-baloo text-xs text-text-muted">
-                        {student.analytics?.learnedWords ?? 0} words
+                        {student.analytics?.totalWordsLearned ?? 0} words
                       </p>
                     </div>
                   </div>
@@ -312,15 +364,87 @@ export default function ClassDetailPage() {
                   Customise which words kids in this class see. Changes apply on next sign-in.
                 </p>
               </div>
+              <Button
+                title="Go to Curriculum Editor"
+                onPress={() => navigate('/teacher/curriculum-editor', { state: { classId } })}
+                variant="primary"
+                size="sm"
+                icon={<span>✏️</span>}
+              />
             </div>
-            <ClassCurriculumEditor
-              classId={classId}
-              grade={classData.grade}
-              learningLanguage={classData.learningLanguage ?? 'te'}
-              homeLanguage={classData.homeLanguage ?? 'en'}
-              addedWordIds={classData.addedWordIds ?? []}
-              removedWordIds={classData.removedWordIds ?? []}
-            />
+          </div>
+        )}
+
+        {/* ── Announcements tab ── */}
+        {tab === 'announcements' && classId && (
+          <div className="flex flex-col gap-md">
+            {/* Compose form */}
+            <Card className="bg-white">
+              <h3 className="font-baloo font-bold text-md text-text-dark mb-md">New Announcement</h3>
+              <div className="space-y-sm">
+                <input
+                  type="text"
+                  value={announceTitle}
+                  onChange={e => setAnnounceTitle(e.target.value)}
+                  placeholder="Title"
+                  className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <textarea
+                  value={announceBody}
+                  onChange={e => setAnnounceBody(e.target.value)}
+                  placeholder="Write your message to students and parents…"
+                  rows={3}
+                  className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handlePostAnnouncement}
+                    disabled={posting || !announceTitle.trim() || !announceBody.trim()}
+                    className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {posting ? 'Posting…' : 'Post Announcement'}
+                  </button>
+                </div>
+              </div>
+            </Card>
+
+            {/* Announcement list */}
+            {loadingAnnouncements ? (
+              <div className="flex justify-center py-lg">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : announcements.length === 0 ? (
+              <Card className="text-center py-xl">
+                <span className="text-5xl block mb-md">📢</span>
+                <h3 className="font-baloo font-bold text-lg text-text-dark mb-sm">No announcements yet</h3>
+                <p className="font-baloo text-sm text-text-muted">
+                  Post your first announcement above.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-sm">
+                {announcements.map(ann => (
+                  <Card key={ann.id} className={`bg-white ${ann.pinned ? 'border border-primary/30 bg-lavender-light/20' : ''}`}>
+                    <div className="flex items-start justify-between gap-md">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-xs mb-xs">
+                          {ann.pinned && (
+                            <span className="font-baloo text-xs bg-lavender-light text-primary px-xs py-0.5 rounded-full font-semibold">
+                              📌 Pinned
+                            </span>
+                          )}
+                          <p className="font-baloo font-bold text-md text-text-dark">{ann.title}</p>
+                        </div>
+                        <p className="font-baloo text-sm text-text-muted whitespace-pre-line">{ann.body}</p>
+                        <p className="font-baloo text-xs text-text-muted mt-sm">
+                          By {ann.teacherName}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -345,19 +469,16 @@ export default function ClassDetailPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-sm mb-xs">
-                        <p className="font-baloo font-bold text-md text-text-dark">
-                          Word Set #{assignment.wordSetId}
-                        </p>
+                        <p className="font-baloo font-bold text-md text-text-dark">{assignment.title}</p>
                         <StatusBadge status={assignment.status} />
                       </div>
                       <p className="font-baloo text-sm text-text-muted">
-                        {assignment.startDate} → {assignment.endDate}
+                        Due: {typeof assignment.dueDate === 'string' ? assignment.dueDate : assignment.dueDate?.toDate?.()?.toLocaleDateString?.() ?? '—'}
+                        {' · '}{assignment.questions?.length ?? 0} questions
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-baloo text-xs text-text-muted">
-                        {assignment.assignedTo === 'all' ? 'All students' : `${(assignment.assignedTo as string[]).length} students`}
-                      </p>
+                      <p className="font-baloo text-xs text-text-muted">{assignment.totalPoints} pts</p>
                     </div>
                   </div>
                 </Card>

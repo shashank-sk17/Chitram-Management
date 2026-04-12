@@ -1,30 +1,42 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { collection, query, where, getCountFromServer } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useProjectStore } from '../../stores/projectStore';
-import { Button } from '../../components/common/Button';
-import { Card } from '../../components/common/Card';
+import { useCurriculumStore } from '../../stores/curriculumStore';
+import { Card, StatCard } from '../../components/common/Card';
 import { CreateProjectModal } from '../../components/admin/CreateProjectModal';
 import { CreateSchoolModal } from '../../components/admin/CreateSchoolModal';
-import { InviteUserModal } from '../../components/admin/InviteUserModal';
+import { Button } from '../../components/common/Button';
 import { getAllProjects, getAllSchools, getProject, getSchoolsInProject } from '../../services/firebase/firestore';
 import type { ProjectDoc, SchoolDoc } from '../../types/firestore';
 
+type ProjectWithId = ProjectDoc & { id: string };
+type SchoolWithId = SchoolDoc & { id: string };
+
 export default function AdminDashboardPage() {
-  const { user, claims } = useAuth();
+  const { claims } = useAuth();
   const { setProjects, setSchools } = useProjectStore();
-  const [projects, setProjectsLocal] = useState<Array<ProjectDoc & { id: string }>>([]);
-  const [schools, setSchoolsLocal] = useState<Array<SchoolDoc & { id: string }>>([]);
+  const { pendingWordsCount, pendingEditsCount, refreshBadgeCounts } = useCurriculumStore();
+
+  const [projects, setProjectsLocal] = useState<ProjectWithId[]>([]);
+  const [schools, setSchoolsLocal] = useState<SchoolWithId[]>([]);
   const [loading, setLoading] = useState(true);
+  const [wordBankCount, setWordBankCount] = useState<number | null>(null);
+  const [licenseCount, setLicenseCount] = useState<number | null>(null);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showCreateSchool, setShowCreateSchool] = useState(false);
-  const [showInviteUser, setShowInviteUser] = useState(false);
 
   const isProjectAdmin = claims?.role === 'projectAdmin';
   const myProjectId = claims?.projectId;
+  const canSeeAllProjects = claims?.role === 'admin';
 
   useEffect(() => {
     loadData();
+    refreshBadgeCounts();
+    loadCounters();
   }, []);
 
   async function loadData() {
@@ -50,91 +62,126 @@ export default function AdminDashboardPage() {
         setProjects(projectsData);
         setSchools(schoolsData);
       }
-    } catch (error) {
-      console.error('Error loading data:', error);
+    } catch (e) {
+      console.error('Error loading data:', e);
     } finally {
       setLoading(false);
     }
   }
 
-  const canSeeAllProjects = claims?.role === 'admin';
-  const unassignedSchools = schools.filter((s) => !s.projectId);
+  async function loadCounters() {
+    try {
+      const [wbSnap, lkSnap] = await Promise.all([
+        getCountFromServer(collection(db, 'wordBank')),
+        getCountFromServer(query(collection(db, 'licenseKeys'), where('status', '==', 'unused'))),
+      ]);
+      setWordBankCount(wbSnap.data().count);
+      setLicenseCount(lkSnap.data().count);
+    } catch (e) {
+      console.error('Error loading counters:', e);
+    }
+  }
+
+  const stats: Array<{ icon: string; value: string | number; label: string; tone: 'primary' | 'secondary' | 'accent' | 'warning' | 'muted' }> = [
+    { icon: '🏫', value: schools.length,        label: 'Total Schools',              tone: 'secondary' },
+    { icon: '📁', value: projects.length,        label: canSeeAllProjects ? 'Total Projects' : 'Your Project', tone: 'primary' },
+    { icon: '📚', value: wordBankCount ?? '—',   label: 'Words in Word Bank',         tone: 'accent' },
+    { icon: '⏳', value: pendingWordsCount,       label: 'Pending Word Approvals',     tone: pendingWordsCount > 0 ? 'warning' : 'muted' },
+    { icon: '🔍', value: pendingEditsCount,       label: 'Pending Curriculum Reviews', tone: pendingEditsCount > 0 ? 'warning' : 'muted' },
+    { icon: '🔑', value: licenseCount ?? '—',    label: 'Active License Keys',        tone: 'primary' },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto space-y-xl">
       {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="mb-xl"
+        transition={{ duration: 0.35 }}
       >
-        <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark mb-sm">
-          {claims?.role === 'admin' ? 'Super Admin Dashboard' : 'Project Admin Dashboard'} 👑
+        <h1 className="font-baloo font-extrabold text-xxl text-text-dark">
+          {canSeeAllProjects ? 'Super Admin Dashboard' : 'Project Admin Dashboard'}
         </h1>
-        <p className="font-baloo text-sm sm:text-lg text-text-muted">
-          {user?.email}
+        <p className="font-baloo text-text-muted mt-xs">
+          Platform overview and pending actions
         </p>
       </motion.div>
 
       {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
+        <div className="flex justify-center items-center h-64">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
         <>
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
-            {[
-              {
-                icon: '📁',
-                count: projects.length,
-                label: canSeeAllProjects ? 'Total Projects' : 'Your Project',
-                color: 'bg-gradient-to-br from-lavender-light to-primary/20',
-              },
-              {
-                icon: '🏫',
-                count: schools.filter((s) => s.projectId).length,
-                label: 'Schools in Projects',
-                color: 'bg-gradient-to-br from-mint-light to-secondary/20',
-              },
-              ...(!isProjectAdmin ? [{
-                icon: '📋',
-                count: unassignedSchools.length,
-                label: 'Unassigned Schools',
-                color: 'bg-gradient-to-br from-peach-light to-accent/20',
-              }] : []),
-            ].map((stat, index) => (
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-sm sm:gap-md">
+            {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-                whileHover={{ scale: 1.05, y: -5 }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, delay: i * 0.04 }}
               >
-                <Card className={`${stat.color} hover:shadow-xl transition-shadow`}>
-                  <div className="text-center">
-                    <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-2xl bg-white/50 flex items-center justify-center mx-auto mb-md shadow-md">
-                      <span className="text-2xl sm:text-4xl">{stat.icon}</span>
-                    </div>
-                    <h3 className="font-baloo font-extrabold text-xl sm:text-hero text-text-dark mb-sm">
-                      {stat.count}
-                    </h3>
-                    <p className="font-baloo text-xs sm:text-body text-text-muted font-semibold">
-                      {stat.label}
-                    </p>
-                  </div>
-                </Card>
+                <StatCard icon={stat.icon} value={stat.value} label={stat.label} tone={stat.tone} />
               </motion.div>
             ))}
           </div>
 
-          {/* Action Buttons - Only show if user has permission */}
+          {/* Pending Actions Panel */}
+          {(pendingWordsCount > 0 || pendingEditsCount > 0) && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+            >
+              <Card className="bg-amber-50 border border-amber-200">
+                <h2 className="font-baloo font-bold text-lg text-text-dark mb-md flex items-center gap-sm">
+                  <span>⚠️</span> Pending Actions
+                </h2>
+                <div className="space-y-sm">
+                  {pendingWordsCount > 0 && (
+                    <div className="flex items-center justify-between bg-white rounded-xl px-md py-sm shadow-sm">
+                      <div className="flex items-center gap-sm">
+                        <span className="text-xl">📝</span>
+                        <p className="font-baloo font-semibold text-sm text-text-dark">
+                          Word submissions: <span className="text-amber-600 font-bold">{pendingWordsCount}</span> pending
+                        </p>
+                      </div>
+                      <Link
+                        to="/admin/word-bank"
+                        className="px-md py-xs bg-primary text-white font-baloo font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors"
+                      >
+                        Go to Word Bank →
+                      </Link>
+                    </div>
+                  )}
+                  {pendingEditsCount > 0 && (
+                    <div className="flex items-center justify-between bg-white rounded-xl px-md py-sm shadow-sm">
+                      <div className="flex items-center gap-sm">
+                        <span className="text-xl">🔍</span>
+                        <p className="font-baloo font-semibold text-sm text-text-dark">
+                          Curriculum edits: <span className="text-amber-600 font-bold">{pendingEditsCount}</span> pending
+                        </p>
+                      </div>
+                      <Link
+                        to="/admin/reviews"
+                        className="px-md py-xs bg-primary text-white font-baloo font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors"
+                      >
+                        Go to Reviews →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Quick Actions */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
-            className="flex flex-col sm:flex-row gap-sm sm:gap-md mb-lg sm:mb-xl"
+            transition={{ duration: 0.3, delay: 0.25 }}
+            className="flex flex-wrap gap-sm"
           >
             {canSeeAllProjects && (
               <Button
@@ -142,132 +189,84 @@ export default function AdminDashboardPage() {
                 onPress={() => setShowCreateProject(true)}
                 variant="primary"
                 size="sm"
-                className="w-auto self-start sm:self-auto"
                 icon={<span>➕</span>}
               />
             )}
-            {(canSeeAllProjects || claims?.role === 'projectAdmin') && (
-              <Button
-                title="Create School"
-                onPress={() => setShowCreateSchool(true)}
-                variant="accent"
-                size="sm"
-                className="w-auto self-start sm:self-auto"
-                icon={<span>🏫</span>}
-              />
-            )}
-            {canSeeAllProjects && (
-              <Button
-                title="Invite User"
-                onPress={() => setShowInviteUser(true)}
-                variant="secondary"
-                size="sm"
-                className="w-auto self-start sm:self-auto"
-                icon={<span>👤</span>}
-              />
-            )}
+            <Button
+              title="Create School"
+              onPress={() => setShowCreateSchool(true)}
+              variant="accent"
+              size="sm"
+              icon={<span>🏫</span>}
+            />
           </motion.div>
 
-          {/* Projects List */}
+          {/* Recent Projects Table */}
           {projects.length > 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.4 }}
-              className="mb-xl"
+              transition={{ duration: 0.3, delay: 0.3 }}
             >
-              <h2 className="font-baloo font-bold text-xl text-text-dark mb-md">
-                Projects
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-md sm:gap-lg">
-                {projects.map((project) => {
-                  const schoolCount = schools.filter(
-                    (s) => s.projectId === project.name
-                  ).length;
-
-                  return (
-                    <Card key={project.id}>
-                      <div className="flex items-start justify-between mb-md">
-                        <div>
-                          <h3 className="font-baloo font-bold text-lg text-text-dark">
-                            {project.name}
-                          </h3>
-                          {project.description && (
-                            <p className="font-baloo text-md text-text-muted">
-                              {project.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="bg-lavender-light px-md py-sm rounded-full">
-                          <span className="font-baloo font-semibold text-sm text-primary">
-                            {schoolCount} schools
-                          </span>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-md">
+                <h2 className="font-baloo font-bold text-xl text-text-dark">Recent Projects</h2>
+                {canSeeAllProjects && (
+                  <Link
+                    to="/admin/projects"
+                    className="font-baloo text-sm text-primary hover:underline"
+                  >
+                    View all →
+                  </Link>
+                )}
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm border border-divider overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-lavender-light/30 border-b border-divider">
+                        <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Project Name</th>
+                        <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Schools</th>
+                        <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projects.slice(0, 8).map((project, i) => {
+                        const schoolCount = schools.filter(s => s.projectId === project.name || s.projectId === project.id).length;
+                        return (
+                          <tr
+                            key={project.id}
+                            className={`border-b border-divider hover:bg-lavender-light/20 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                          >
+                            <td className="px-md py-sm font-baloo font-semibold text-sm text-text-dark">
+                              {project.name}
+                            </td>
+                            <td className="px-md py-sm">
+                              <span className="px-sm py-xs bg-mint-light text-secondary font-baloo font-semibold text-xs rounded-full">
+                                {schoolCount} school{schoolCount !== 1 ? 's' : ''}
+                              </span>
+                            </td>
+                            <td className="px-md py-sm font-baloo text-sm text-text-muted">
+                              {project.description || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </motion.div>
           )}
 
-          {/* Schools List */}
-          {schools.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.5 }}
-            >
-              <h2 className="font-baloo font-bold text-xl text-text-dark mb-md">
-                All Schools
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md sm:gap-lg">
-                {schools.map((school) => (
-                  <Card key={school.id}>
-                    <div className="flex items-center gap-md mb-md">
-                      <div className="w-12 h-12 rounded-full bg-secondary/20 flex items-center justify-center">
-                        <span className="text-2xl">🏫</span>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-baloo font-bold text-body text-text-dark">
-                          {school.name}
-                        </h3>
-                        <p className="font-baloo text-sm text-text-muted">
-                          Code: {school.code}
-                        </p>
-                      </div>
-                    </div>
-                    {school.projectId && (
-                      <div className="bg-mint-light px-md py-sm rounded-lg">
-                        <p className="font-baloo text-sm text-text-body">
-                          📁 Project: {school.projectId}
-                        </p>
-                      </div>
-                    )}
-                    {!school.projectId && (
-                      <div className="bg-rose-light px-md py-sm rounded-lg">
-                        <p className="font-baloo text-sm text-error">
-                          ⚠️ Not assigned to project
-                        </p>
-                      </div>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Empty State */}
+          {/* Empty state */}
           {projects.length === 0 && schools.length === 0 && (
-            <Card className="text-center py-lg sm:py-xxl">
-              <div className="w-24 h-24 rounded-full bg-lavender-light flex items-center justify-center mx-auto mb-md">
-                <span className="text-4xl sm:text-5xl">🚀</span>
-              </div>
-              <h3 className="font-baloo font-bold text-lg sm:text-xl text-text-dark mb-sm">
+            <Card className="text-center py-xxl">
+              <span className="text-6xl block mb-md">🚀</span>
+              <h3 className="font-baloo font-bold text-xl text-text-dark mb-sm">
                 Welcome to Chitram Management
               </h3>
-              <p className="font-baloo text-sm sm:text-body text-text-muted mb-lg">
-                Get started by creating your first project and schools
+              <p className="font-baloo text-body text-text-muted mb-lg">
+                Get started by creating your first project and schools.
               </p>
               {canSeeAllProjects && (
                 <Button
@@ -281,7 +280,6 @@ export default function AdminDashboardPage() {
         </>
       )}
 
-      {/* Modals */}
       <CreateProjectModal
         isOpen={showCreateProject}
         onClose={() => setShowCreateProject(false)}
@@ -290,11 +288,6 @@ export default function AdminDashboardPage() {
       <CreateSchoolModal
         isOpen={showCreateSchool}
         onClose={() => setShowCreateSchool(false)}
-        onSuccess={loadData}
-      />
-      <InviteUserModal
-        isOpen={showInviteUser}
-        onClose={() => setShowInviteUser(false)}
         onSuccess={loadData}
       />
     </div>

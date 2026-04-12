@@ -50,7 +50,6 @@ export function Button({
         flex items-center justify-center gap-sm
         transition-opacity
         whitespace-nowrap
-        w-full
         ${variantClasses[variant]}
         ${sizeClasses[size]}
         ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}

@@ -1,6 +1,7 @@
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo, useEffect } from 'react';
 import { AppLayout } from './AppLayout';
 import { useAuthStore } from '../../stores/authStore';
+import { useCurriculumStore } from '../../stores/curriculumStore';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -8,23 +9,33 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { claims } = useAuthStore();
+  const { pendingWordsCount, pendingEditsCount, refreshBadgeCounts } = useCurriculumStore();
 
-  // Filter nav items based on exact role
+  useEffect(() => {
+    refreshBadgeCounts();
+  }, []);
+
   const navItems = useMemo(() => {
     const isSuperAdmin = claims?.role === 'admin';
-
-    const items = [
-      { path: '', label: 'Dashboard', icon: '📊' },
-      // Curriculum only for super admin
-      ...(isSuperAdmin ? [{ path: '/admin/curriculum', label: 'Curriculum', icon: '📚' }] : []),
+    const isProjectAdmin = claims?.role === 'projectAdmin';
+    return [
+      { path: '', label: 'Dashboard', icon: '🏠' },
+      ...(isSuperAdmin ? [
+        { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },
+        { path: '/admin/curricula', label: 'Language Curricula', icon: '🌐' },
+        { path: '/admin/reviews', label: 'Reviews', icon: '✅', badge: pendingEditsCount },
+        { path: '/admin/license-keys', label: 'License Keys', icon: '🔑' },
+      ] : []),
+      ...(isProjectAdmin ? [
+        { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },
+        { path: '/admin/reviews', label: 'Reviews', icon: '✅', badge: pendingEditsCount },
+      ] : []),
       { path: '/admin/projects', label: 'Projects', icon: '🎯' },
       { path: '/admin/schools', label: 'Schools', icon: '🏫' },
       { path: '/admin/users', label: 'Users', icon: '👥' },
       { path: '/admin/analytics', label: 'Analytics', icon: '📈' },
     ];
-
-    return items;
-  }, [claims]);
+  }, [claims, pendingWordsCount, pendingEditsCount]);
 
   return <AppLayout navItems={navItems}>{children}</AppLayout>;
 }

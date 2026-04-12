@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/common/Button';
@@ -9,6 +10,7 @@ import { useAuth } from '../../features/auth/hooks/useAuth';
 import type { SchoolDoc, ProjectDoc } from '../../types/firestore';
 
 export default function SchoolsPage() {
+  const navigate = useNavigate();
   const { claims } = useAuth();
   const { setSchools } = useProjectStore();
   const [schools, setSchoolsLocal] = useState<Array<SchoolDoc & { id: string }>>([]);
@@ -75,16 +77,15 @@ export default function SchoolsPage() {
         transition={{ duration: 0.4 }}
         className="mb-xl"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm mb-md">
+        <div className="flex items-center justify-between gap-sm mb-md">
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
-            Schools Management 🏫
+            Schools
           </h1>
           <Button
             title="Add School"
             onPress={() => setShowCreateSchool(true)}
             variant="primary"
             size="sm"
-            className="w-auto self-start sm:self-auto"
             icon={<span>➕</span>}
           />
         </div>
@@ -102,9 +103,9 @@ export default function SchoolsPage() {
           {/* Stats */}
           <div className="grid grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
             {[
-              { label: 'Total Schools', count: stats.total, icon: '🏫', color: 'bg-gradient-to-br from-lavender-light to-primary/20' },
-              { label: 'Assigned', count: stats.assigned, icon: '✅', color: 'bg-gradient-to-br from-mint-light to-secondary/20' },
-              ...(!isProjectAdmin ? [{ label: 'Unassigned', count: stats.unassigned, icon: '⚠️', color: 'bg-gradient-to-br from-peach-light to-accent/20' }] : []),
+              { label: 'Total Schools', count: stats.total, icon: '🏫', color: 'bg-lavender-light' },
+              { label: 'Assigned', count: stats.assigned, icon: '✅', color: 'bg-mint-light' },
+              ...(!isProjectAdmin ? [{ label: 'Unassigned', count: stats.unassigned, icon: '⚠️', color: 'bg-peach-light' }] : []),
             ].map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -155,7 +156,7 @@ export default function SchoolsPage() {
                       <option value="all">All Projects</option>
                       <option value="unassigned">Unassigned</option>
                       {projects.map((project) => (
-                        <option key={project.id} value={project.name}>
+                        <option key={project.id} value={project.id}>
                           {project.name}
                         </option>
                       ))}
@@ -172,7 +173,7 @@ export default function SchoolsPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md sm:gap-lg"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md sm:gap-lg items-stretch"
             >
               {filteredSchools.map((school, index) => (
                 <motion.div
@@ -180,50 +181,42 @@ export default function SchoolsPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 0.4 + index * 0.05 }}
-                  whileHover={{ scale: 1.02, y: -5 }}
+                  className="cursor-pointer h-full"
+                  onClick={() => navigate(`/admin/schools/${school.id}`)}
                 >
-                  <Card className="hover:shadow-xl transition-shadow">
+                  <div className="h-full bg-white border border-divider rounded-xl p-md sm:p-lg shadow-sm hover:shadow-md hover:border-primary/30 transition-all flex flex-col">
+                    {/* Top: icon + name */}
                     <div className="flex items-start gap-md mb-md">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-secondary to-primary flex items-center justify-center shadow-lg">
-                        <span className="text-3xl">🏫</span>
+                      <div className="w-11 h-11 rounded-xl bg-lavender-light flex items-center justify-center flex-shrink-0">
+                        <span className="text-xl">🏫</span>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="font-baloo font-bold text-lg text-text-dark mb-xs">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-baloo font-bold text-md text-text-dark leading-tight mb-xs">
                           {school.name}
                         </h3>
-                        <div className="flex items-center gap-xs">
-                          <span className="font-baloo text-sm text-text-muted">Code:</span>
-                          <span className="font-baloo font-semibold text-sm text-primary">
-                            {school.code}
-                          </span>
-                        </div>
+                        <span className="font-mono text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                          {school.code}
+                        </span>
                       </div>
                     </div>
 
-                    {school.projectId ? (
-                      <div className="bg-mint-light px-md py-sm rounded-lg border border-secondary/20">
+                    {/* Project tag */}
+                    <div className="mt-auto pt-md border-t border-divider">
+                      {school.projectId ? (
                         <div className="flex items-center gap-xs">
-                          <span className="text-lg">📁</span>
-                          <span className="font-baloo text-sm text-text-dark">{school.projectId}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-rose-light px-md py-sm rounded-lg border border-error/20">
-                        <div className="flex items-center gap-xs">
-                          <span className="text-lg">⚠️</span>
-                          <span className="font-baloo text-sm text-error font-semibold">
-                            Not assigned to project
+                          <span className="text-xs text-text-muted">📁</span>
+                          <span className="font-baloo text-xs text-text-muted truncate">
+                            {projects.find(p => p.id === school.projectId)?.name ?? school.projectId}
                           </span>
                         </div>
-                      </div>
-                    )}
-
-                    <div className="mt-md pt-md border-t border-divider">
-                      <div className="flex items-center justify-between text-xs text-text-muted font-baloo">
-                        <span>Created: {new Date(school.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}</span>
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-xs">
+                          <span className="text-xs">⚠️</span>
+                          <span className="font-baloo text-xs text-error font-semibold">Not assigned to project</span>
+                        </div>
+                      )}
                     </div>
-                  </Card>
+                  </div>
                 </motion.div>
               ))}
             </motion.div>

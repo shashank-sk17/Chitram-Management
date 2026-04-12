@@ -14,20 +14,23 @@ import LoginPage from '../pages/auth/LoginPage';
 import DeniedPage from '../pages/auth/DeniedPage';
 import VerifyEmailPage from '../pages/auth/VerifyEmailPage';
 import TeacherDashboardPage from '../pages/teacher/DashboardPage';
-import TeacherCurriculumPage from '../pages/teacher/CurriculumPage';
 import TeacherClassesPage from '../pages/teacher/ClassesPage';
 import TeacherAssignmentsPage from '../pages/teacher/AssignmentsPage';
-import TeacherStudentsPage from '../pages/teacher/StudentsPage';
-import TeacherAnalyticsPage from '../pages/teacher/AnalyticsPage';
-import TeacherApprovalsPage from '../pages/teacher/ApprovalsPage';
-import TeacherAttendancePage from '../pages/teacher/AttendancePage';
+import TeacherStudentAnalyticsPage from '../pages/teacher/StudentAnalyticsPage';
 import TeacherClassDetailPage from '../pages/teacher/ClassDetailPage';
+import TeacherCurriculumEditorPage from '../pages/teacher/CurriculumEditorPage';
+import TeacherAnnouncementsPage from '../pages/teacher/AnnouncementsPage';
 import AdminDashboardPage from '../pages/admin/DashboardPage';
-import AdminCurriculumPage from '../pages/admin/CurriculumPage';
 import AdminProjectsPage from '../pages/admin/ProjectsPage';
+import AdminProjectDetailPage from '../pages/admin/ProjectDetailPage';
 import AdminSchoolsPage from '../pages/admin/SchoolsPage';
+import AdminSchoolDetailPage from '../pages/admin/SchoolDetailPage';
 import AdminUsersPage from '../pages/admin/UsersPage';
 import AdminAnalyticsPage from '../pages/admin/AnalyticsPage';
+import AdminWordBankPage from '../pages/admin/WordBankPage';
+import AdminLanguageCurriculaPage from '../pages/admin/LanguageCurriculaPage';
+import AdminCurriculumReviewsPage from '../pages/admin/CurriculumReviewsPage';
+import AdminLicenseKeysPage from '../pages/admin/LicenseKeysPage';
 import PMDashboardPage from '../pages/pm/DashboardPage';
 import PMAnalyticsPage from '../pages/pm/AnalyticsPage';
 import PrincipalDashboardPage from '../pages/principal/DashboardPage';
@@ -85,14 +88,17 @@ export function AppRoutes() {
               <TeacherLayout>
                 <Routes>
                   <Route index element={<TeacherDashboardPage />} />
-                  <Route path="curriculum" element={<TeacherCurriculumPage />} />
                   <Route path="classes" element={<TeacherClassesPage />} />
                   <Route path="classes/:classId" element={<TeacherClassDetailPage />} />
                   <Route path="assignments" element={<TeacherAssignmentsPage />} />
-                  <Route path="students" element={<TeacherStudentsPage />} />
-                  <Route path="approvals" element={<TeacherApprovalsPage />} />
-                  <Route path="attendance" element={<TeacherAttendancePage />} />
-                  <Route path="analytics" element={<TeacherAnalyticsPage />} />
+                  <Route path="student-analytics" element={<TeacherStudentAnalyticsPage />} />
+                  <Route path="curriculum-editor" element={<TeacherCurriculumEditorPage />} />
+                  <Route path="announcements" element={<TeacherAnnouncementsPage />} />
+                  {/* Legacy redirects */}
+                  <Route path="students" element={<Navigate to="/teacher/student-analytics" replace />} />
+                  <Route path="analytics" element={<Navigate to="/teacher/student-analytics" replace />} />
+                  <Route path="practice-tracking" element={<Navigate to="/teacher/student-analytics" replace />} />
+                  <Route path="gradebook" element={<Navigate to="/teacher/assignments" replace />} />
                 </Routes>
               </TeacherLayout>
             </RoleGuard>
@@ -109,19 +115,16 @@ export function AppRoutes() {
               <AdminLayout>
                 <Routes>
                   <Route index element={<AdminDashboardPage />} />
-                  {/* Curriculum only for super admin */}
-                  <Route
-                    path="curriculum"
-                    element={
-                      <RoleGuard allowedRoles={['admin']}>
-                        <AdminCurriculumPage />
-                      </RoleGuard>
-                    }
-                  />
                   <Route path="projects" element={<AdminProjectsPage />} />
+                  <Route path="projects/:projectId" element={<AdminProjectDetailPage />} />
                   <Route path="schools" element={<AdminSchoolsPage />} />
+                  <Route path="schools/:schoolId" element={<AdminSchoolDetailPage />} />
                   <Route path="users" element={<AdminUsersPage />} />
                   <Route path="analytics" element={<AdminAnalyticsPage />} />
+                  <Route path="word-bank" element={<AdminWordBankPage />} />
+                  <Route path="curricula" element={<AdminLanguageCurriculaPage />} />
+                  <Route path="reviews" element={<AdminCurriculumReviewsPage />} />
+                  <Route path="license-keys" element={<AdminLicenseKeysPage />} />
                 </Routes>
               </AdminLayout>
             </RoleGuard>

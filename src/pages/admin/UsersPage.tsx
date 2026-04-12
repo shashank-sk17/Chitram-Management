@@ -103,11 +103,11 @@ export default function UsersPage() {
 
   const getRoleColor = (role: string) => {
     const colors: Record<string, string> = {
-      admin: 'bg-gradient-to-r from-primary to-secondary',
-      projectAdmin: 'bg-gradient-to-r from-secondary to-accent',
-      teacher: 'bg-gradient-to-r from-accent to-primary',
-      pm: 'bg-gradient-to-r from-primary/70 to-secondary/70',
-      principal: 'bg-gradient-to-r from-secondary/70 to-accent/70',
+      admin: 'bg-primary',
+      projectAdmin: 'bg-secondary',
+      teacher: 'bg-accent',
+      pm: 'bg-primary/70',
+      principal: 'bg-secondary/70',
     };
     return colors[role] || 'bg-gray-500';
   };
@@ -236,7 +236,7 @@ export default function UsersPage() {
                 >
                   <Card className="hover:shadow-xl transition-shadow">
                     <div className="flex items-start gap-md mb-md">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
+                      <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-lg">
                         <span className="font-baloo font-bold text-xl text-white">
                           {user.email[0].toUpperCase()}
                         </span>

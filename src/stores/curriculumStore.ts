@@ -1,174 +1,138 @@
 import { create } from 'zustand';
-import { onSnapshot, doc, collection } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import type { MotherCurriculumDoc, CurriculumWordDoc, TeacherCurriculumDoc } from '../types/firestore';
+import type { WordBankDoc, LanguageCurriculumDoc, CurriculumEditDoc, LanguageCode, CurriculumLevel } from '../types/firestore';
+import { getWordBankPage, getWordBankByIds, getPendingWordsCount, type WordBankFilters } from '../services/firebase/wordBank';
+import { getLanguageCurriculum } from '../services/firebase/languageCurricula';
+import { getCurriculumEditsForClass, getPendingEdits, getPendingEditsCount } from '../services/firebase/curriculumEdits';
 
 interface CurriculumState {
-  // Mother curriculum (grade-based)
-  motherCurriculum: Record<string, MotherCurriculumDoc & { id: string }>;
-
-  // All curriculum words
-  words: Record<string, CurriculumWordDoc & { id: string }>;
-
-  // Teacher customizations
-  teacherCurriculum: Record<string, TeacherCurriculumDoc & { id: string }>;
-
-  // Loading states
-  loadingMotherCurriculum: boolean;
+  words: Record<string, WordBankDoc>;
   loadingWords: boolean;
-  loadingTeacherCurriculum: boolean;
+  wordsError: string | null;
 
-  // Actions
-  setMotherCurriculum: (curriculum: Record<string, MotherCurriculumDoc & { id: string }>) => void;
-  setWords: (words: Record<string, CurriculumWordDoc & { id: string }>) => void;
-  setTeacherCurriculum: (curriculum: Record<string, TeacherCurriculumDoc & { id: string }>) => void;
+  curricula: Record<string, LanguageCurriculumDoc>; // keyed `${lang}_g${grade}`
+  loadingCurricula: boolean;
 
-  // Real-time listeners
-  listenToMotherCurriculum: (grades: string[]) => () => void;
-  listenToWords: (wordIds: string[]) => () => void;
-  listenToTeacherCurriculum: (teacherId: string) => () => void;
+  edits: Array<{ id: string } & CurriculumEditDoc>;
+  pendingEdits: Array<{ id: string } & CurriculumEditDoc>;
+  loadingEdits: boolean;
 
-  // Derived data
-  getFinalWordList: (grade: string, teacherId?: string) => string[];
+  pendingWordsCount: number;
+  pendingEditsCount: number;
+
+  fetchWords: (filters?: WordBankFilters) => Promise<void>;
+  fetchWordsByIds: (ids: string[]) => Promise<void>;
+  updateWordLocally: (wordId: string, data: Partial<WordBankDoc>) => void;
+
+  fetchCurriculum: (lang: LanguageCode, grade: number) => Promise<void>;
+  updateCurriculumLocally: (lang: LanguageCode, grade: number, levels: CurriculumLevel[]) => void;
+
+  fetchEditsForClass: (classId: string) => Promise<void>;
+  fetchPendingEdits: (projectId?: string) => Promise<void>;
+
+  refreshBadgeCounts: () => Promise<void>;
+  reset: () => void;
 }
 
-export const useCurriculumStore = create<CurriculumState>((set, get) => ({
-  motherCurriculum: {},
+const initialState = {
   words: {},
-  teacherCurriculum: {},
-  loadingMotherCurriculum: false,
   loadingWords: false,
-  loadingTeacherCurriculum: false,
+  wordsError: null,
+  curricula: {},
+  loadingCurricula: false,
+  edits: [],
+  pendingEdits: [],
+  loadingEdits: false,
+  pendingWordsCount: 0,
+  pendingEditsCount: 0,
+};
 
-  setMotherCurriculum: (curriculum) => set({ motherCurriculum: curriculum }),
-  setWords: (words) => set({ words }),
-  setTeacherCurriculum: (curriculum) => set({ teacherCurriculum: curriculum }),
+export const useCurriculumStore = create<CurriculumState>((set) => ({
+  ...initialState,
 
-  // Listen to mother curriculum for multiple grades
-  listenToMotherCurriculum: (grades) => {
-    set({ loadingMotherCurriculum: true });
-
-    const unsubscribes = grades.map((grade) => {
-      const gradeId = `grade${grade}`;
-      return onSnapshot(
-        doc(db, 'motherCurriculum', gradeId),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            set((state) => ({
-              motherCurriculum: {
-                ...state.motherCurriculum,
-                [grade]: { id: snapshot.id, ...snapshot.data() } as MotherCurriculumDoc & { id: string },
-              },
-              loadingMotherCurriculum: false,
-            }));
-          } else {
-            set((state) => ({
-              motherCurriculum: {
-                ...state.motherCurriculum,
-                [grade]: {
-                  id: gradeId,
-                  grade,
-                  wordIds: [],
-                  levelCount: 0,
-                  createdAt: new Date() as any,
-                  updatedAt: new Date() as any,
-                } as MotherCurriculumDoc & { id: string },
-              },
-              loadingMotherCurriculum: false,
-            }));
-          }
-        },
-        (error) => {
-          console.error('Error listening to mother curriculum:', error);
-          set({ loadingMotherCurriculum: false });
-        }
-      );
-    });
-
-    return () => unsubscribes.forEach((unsub) => unsub());
+  fetchWords: async (filters?: WordBankFilters) => {
+    set({ loadingWords: true, wordsError: null });
+    try {
+      const { words } = await getWordBankPage(filters);
+      const map: Record<string, WordBankDoc> = {};
+      words.forEach(w => { map[w.id] = w; });
+      set({ words: map, loadingWords: false });
+    } catch (e: any) {
+      set({ loadingWords: false, wordsError: e.message });
+    }
   },
 
-  // Listen to specific words
-  listenToWords: (wordIds) => {
-    if (wordIds.length === 0) return () => {};
-
-    set({ loadingWords: true });
-
-    const unsubscribes = wordIds.map((wordId) => {
-      return onSnapshot(
-        doc(db, 'curriculumWords', wordId),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            set((state) => ({
-              words: {
-                ...state.words,
-                [wordId]: { id: snapshot.id, ...snapshot.data() } as CurriculumWordDoc & { id: string },
-              },
-              loadingWords: false,
-            }));
-          }
-        },
-        (error) => {
-          console.error('Error listening to word:', error);
-          set({ loadingWords: false });
-        }
-      );
-    });
-
-    return () => unsubscribes.forEach((unsub) => unsub());
+  fetchWordsByIds: async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const fetched = await getWordBankByIds(ids);
+    set(state => ({ words: { ...state.words, ...fetched } }));
   },
 
-  // Listen to teacher curriculum customizations
-  listenToTeacherCurriculum: (teacherId) => {
-    set({ loadingTeacherCurriculum: true });
-
-    const unsubscribe = onSnapshot(
-      collection(db, 'teacherCurriculum'),
-      (snapshot) => {
-        const curriculum: Record<string, TeacherCurriculumDoc & { id: string }> = {};
-
-        snapshot.forEach((doc) => {
-          const data = doc.data() as TeacherCurriculumDoc;
-          if (data.teacherId === teacherId) {
-            curriculum[doc.id] = { id: doc.id, ...data };
-          }
-        });
-
-        set({ teacherCurriculum: curriculum, loadingTeacherCurriculum: false });
+  updateWordLocally: (wordId, data) => {
+    set(state => ({
+      words: {
+        ...state.words,
+        [wordId]: state.words[wordId] ? { ...state.words[wordId], ...data } : state.words[wordId],
       },
-      (error) => {
-        console.error('Error listening to teacher curriculum:', error);
-        set({ loadingTeacherCurriculum: false });
+    }));
+  },
+
+  fetchCurriculum: async (lang, grade) => {
+    set({ loadingCurricula: true });
+    try {
+      const data = await getLanguageCurriculum(lang, grade);
+      if (data) {
+        const key = `${lang}_g${grade}`;
+        set(state => ({
+          curricula: { ...state.curricula, [key]: data },
+          loadingCurricula: false,
+        }));
+      } else {
+        set({ loadingCurricula: false });
       }
-    );
-
-    return unsubscribe;
+    } catch {
+      set({ loadingCurricula: false });
+    }
   },
 
-  // Get final word list for a grade (mother + teacher customizations)
-  getFinalWordList: (grade, teacherId) => {
-    const state = get();
-    const motherWords = state.motherCurriculum[grade]?.wordIds || [];
-
-    if (!teacherId) {
-      return motherWords;
-    }
-
-    // Find teacher customization for this grade
-    const teacherCustomization = Object.values(state.teacherCurriculum).find(
-      (tc) => tc.teacherId === teacherId && tc.grade === grade
-    );
-
-    if (!teacherCustomization) {
-      return motherWords;
-    }
-
-    // Apply teacher customizations: remove excluded words, add custom words
-    const finalWords = [
-      ...motherWords.filter((id) => !teacherCustomization.removedWordIds.includes(id)),
-      ...teacherCustomization.addedWordIds,
-    ];
-
-    return finalWords;
+  updateCurriculumLocally: (lang, grade, levels) => {
+    const key = `${lang}_g${grade}`;
+    set(state => ({
+      curricula: {
+        ...state.curricula,
+        [key]: state.curricula[key]
+          ? { ...state.curricula[key], levels }
+          : { language: lang, grade, active: true, version: 1, levels, updatedAt: '', updatedBy: '' },
+      },
+    }));
   },
+
+  fetchEditsForClass: async (classId) => {
+    set({ loadingEdits: true });
+    try {
+      const edits = await getCurriculumEditsForClass(classId);
+      set({ edits, loadingEdits: false });
+    } catch {
+      set({ loadingEdits: false });
+    }
+  },
+
+  fetchPendingEdits: async (projectId?) => {
+    set({ loadingEdits: true });
+    try {
+      const pendingEdits = await getPendingEdits(projectId);
+      set({ pendingEdits, loadingEdits: false });
+    } catch {
+      set({ loadingEdits: false });
+    }
+  },
+
+  refreshBadgeCounts: async () => {
+    const [pendingWordsCount, pendingEditsCount] = await Promise.all([
+      getPendingWordsCount(),
+      getPendingEditsCount(),
+    ]);
+    set({ pendingWordsCount, pendingEditsCount });
+  },
+
+  reset: () => set(initialState),
 }));

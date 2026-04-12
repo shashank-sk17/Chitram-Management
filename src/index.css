@@ -2,14 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global styles */
+/* ── Global ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
+  background-color: #FFF8EB;
   font-family: 'Baloo 2', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color: #1B1B1B;
 }
 
-* {
-  box-sizing: border-box;
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4D6FF;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #7C81FF;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #7C81FF;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection {
+  background: #EDEEFF;
+  color: #1B1B1B;
 }

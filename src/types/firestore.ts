@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase/firestore';
 // Language codes supported in the app
 export type LanguageCode = 'en' | 'hi' | 'te' | 'mr' | 'es' | 'fr';
 
-// ===== Existing Collections (from mobile app) =====
+// ===== Core User Collections =====
 
 export interface StudentDoc {
   name: string;
@@ -19,7 +19,17 @@ export interface StudentDoc {
   classIds?: string[];
   schoolId?: string | null;
   avatarColor: string;
-  analytics?: any;
+  analytics?: {
+    streakDays?: number;
+    lastStudyDate?: string;
+    totalWordsLearned?: number;
+    totalSessions?: number;
+    averageAccuracy?: number;
+    quizAccuracy?: number;
+    drawingAccuracy?: number;
+    levelProgress?: Record<string, { completed: boolean; wordsDone: number; totalWords: number; completedAt?: Timestamp }>;
+  };
+  expoPushToken?: string;
   createdAt: Timestamp;
 }
 
@@ -28,6 +38,7 @@ export interface TeacherDoc {
   email: string;
   school?: string;
   schoolId?: string | null;
+  projectId?: string | null;
   avatarColor: string;
   analytics?: any;
   createdAt: Timestamp;
@@ -57,10 +68,27 @@ export interface UserDoc {
 export interface SchoolDoc {
   name: string;
   code: string;
-  projectId?: string; // NEW: Link to project
+  projectId?: string;
   createdBy: string;
   teacherIds: string[];
   createdAt: Timestamp;
+}
+
+export interface CustomWordEdit {
+  word?: Partial<Record<LanguageCode, string>>;
+  pronunciation?: Partial<Record<LanguageCode, string>>;
+  sentence?: Partial<Record<LanguageCode, string>>;
+  imageUrl?: string | null;
+  editedAt?: Timestamp;
+  editedBy?: string;
+}
+
+export interface ClassCustomCurriculum {
+  levels: CurriculumLevel[];
+  /** Per-word overrides for this class — originals in wordBank are never touched */
+  customWords?: Record<string, CustomWordEdit>;
+  adoptedFrom?: string;
+  appliedAt: Timestamp;
 }
 
 export interface ClassDoc {
@@ -71,33 +99,22 @@ export interface ClassDoc {
   code: string;
   studentIds: string[];
   pendingStudentIds: string[];
-  /** Home language of students in this class (e.g. 'en') */
   homeLanguage: LanguageCode;
-  /** Language kids in this class are learning (e.g. 'te') */
   learningLanguage: LanguageCode;
-  /** curriculumWords docIds added by the teacher beyond mother curriculum */
+  // Legacy — kept for mobile app compat via getMyData CF
   addedWordIds: string[];
-  /** curriculumWords docIds removed from the mother curriculum for this class */
   removedWordIds: string[];
+  // New — overrides languageCurricula when set
+  customCurriculum?: ClassCustomCurriculum | null;
   createdAt: Timestamp;
 }
 
-export interface AssignmentDoc {
-  wordSetId: number | string; // number for legacy, string for new
-  classId: string;
-  className: string;
-  assignedTo: 'all' | string[];
-  teacherId: string;
-  startDate: string;
-  endDate: string;
-  status: 'active' | 'upcoming' | 'completed';
+export interface ProjectDoc {
+  name: string;
+  description?: string;
+  schoolIds: string[];
+  createdBy: string;
   createdAt: Timestamp;
-  // NEW: Enhanced for curriculum integration
-  curriculumSnapshot?: {
-    grade: string;
-    wordIds: string[];
-    sourceType: 'mother' | 'teacher-customized';
-  };
 }
 
 export interface LearningAttemptDoc {
@@ -111,55 +128,193 @@ export interface LearningAttemptDoc {
   unguidedDrawingDuration?: number;
 }
 
-// ===== New Collections (for web app) =====
+// ===== Word Bank =====
 
-export interface ProjectDoc {
-  name: string;
-  description?: string;
-  schoolIds: string[];
-  createdBy: string; // Super Admin or Project Admin UID
-  createdAt: Timestamp;
+export interface AudioUrlMap {
+  word: Record<LanguageCode, string | null>;
+  meaning: Record<LanguageCode, string | null>;
+  sentence: Record<LanguageCode, string | null>;
 }
 
-export interface MotherCurriculumDoc {
-  grade: string; // '1', '2', '3', '4', '5'
-  wordIds: string[]; // Firestore docIds for curriculumWords in this grade
-  levelCount: number; // max level number in this grade
+export interface WordBankDoc {
+  numericId: number;
+  status: 'active' | 'pending' | 'rejected';
+  wordType: 'NS360' | 'GQD';
+  difficulty: 'Low' | 'Medium' | 'High';
+  active: boolean;
+  word: Record<LanguageCode, string>;
+  pronunciation: Record<LanguageCode, string>;
+  meaning: Record<LanguageCode, string>;
+  sentence: Record<LanguageCode, string>;
+  imageUrl: string | null;
+  imageStoragePath?: string | null;
+  audioUrl: AudioUrlMap;
+  submittedBy?: string;
+  submittedAt?: Timestamp;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
+  rejectionNote?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 
-export interface AudioUrlMap {
-  word: Record<string, string | null>;
-  meaning: Record<string, string | null>;
-  sentence: Record<string, string | null>;
+// ===== Language Curricula =====
+
+export interface CurriculumLevel {
+  levelNum: number;
+  wordIds: string[];
 }
 
+export interface LanguageCurriculumDoc {
+  language: LanguageCode;
+  grade: number;
+  active: boolean;
+  version: number;
+  levels: CurriculumLevel[];
+  updatedAt: Timestamp | string;
+  updatedBy: string;
+}
+
+// ===== Curriculum Edits (teacher proposals) =====
+
+export interface CurriculumEditDoc {
+  classId: string;
+  projectId: string;
+  teacherUid: string;
+  grade: number;
+  language: LanguageCode;
+  submittedAt: Timestamp;
+  status: 'pending' | 'approved' | 'rejected';
+  shareWithProject: boolean;
+  reviewedAt?: Timestamp;
+  reviewedBy?: string;
+  rejectionNote?: string;
+  proposedLevels: CurriculumLevel[];
+  pendingWordIds: string[];
+  resolvedLevels?: CurriculumLevel[];
+  adoptedBy: string[];
+}
+
+// ===== MCQ Assignments =====
+
+export interface McqQuestion {
+  id: string;
+  questionText: string;
+  options: string[];
+  correctIndices: number[];
+}
+
+export interface McqAssignmentDoc {
+  classId: string;
+  projectId?: string;
+  teacherUid?: string;
+  title: string;
+  dueDate: Timestamp | string;
+  totalPoints: number;
+  status: 'draft' | 'active' | 'closed';
+  questions: McqQuestion[];
+  createdAt: Timestamp;
+}
+
+export interface McqAnswer {
+  questionId: string;
+  selectedIndices: number[];
+  correct: boolean;
+}
+
+export interface StudentSubmissionDoc {
+  assignmentId: string;
+  uid: string;
+  classId: string;
+  submittedAt?: Timestamp;
+  status: 'pending' | 'submitted' | 'graded';
+  score?: number;
+  totalPoints: number;
+  answers: McqAnswer[];
+}
+
+// ===== Announcements =====
+
+export interface AnnouncementDoc {
+  classId: string;
+  teacherUid: string;
+  teacherName: string;
+  title: string;
+  body: string;
+  createdAt: Timestamp;
+  pinned: boolean;
+}
+
+// ===== License Keys =====
+
+export interface LicenseKeyDoc {
+  key: string;
+  grade: number;
+  language: LanguageCode;
+  status: 'unused' | 'active' | 'expired';
+  createdBy: string;
+  createdAt: Timestamp;
+  expiresAt?: Timestamp;
+  usedBy?: string;
+  redeemedAt?: Timestamp;
+}
+
+// ===== Legacy (kept for old pages until migration complete) =====
+
+/** @deprecated use WordBankDoc */
 export interface CurriculumWordDoc {
-  numericId: number;         // 1–189, sequential; used by kid app for wordProgress
-  grade: number;             // 1–5
-  level: number;             // 1–4 within grade
-  orderInLevel: number;      // 1–10 position within level
+  numericId: number;
+  grade: number;
+  level: number;
+  orderInLevel: number;
   wordType: 'NS360' | 'GQD';
   source: 'mother' | 'teacher';
-  createdBy: string;         // UID (admin/seed)
-  word: Record<string, string>;       // { te, en, hi, mr, es, fr }
-  meaning: Record<string, string>;    // definition per language; starts empty
-  sentence: Record<string, string>;   // { te, en, hi, mr, es, fr }
+  createdBy: string;
+  word: Record<string, string>;
+  meaning: Record<string, string>;
+  sentence: Record<string, string>;
   imageUrl: string | null;
   imageStoragePath: string | null;
-  audioUrl: AudioUrlMap;             // null until pre-recorded
+  audioUrl: AudioUrlMap;
   difficulty: 'Low' | 'Medium' | 'High';
   active: boolean;
   createdAt: Timestamp | string;
   updatedAt: Timestamp | string;
 }
 
+/** @deprecated use LanguageCurriculumDoc */
+export interface MotherCurriculumDoc {
+  grade: string;
+  wordIds: string[];
+  levelCount: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** @deprecated use CurriculumEditDoc */
 export interface TeacherCurriculumDoc {
   teacherId: string;
   grade: string;
-  addedWordIds: string[]; // Teacher-added words
-  removedWordIds: string[]; // Removed from mother curriculum
+  addedWordIds: string[];
+  removedWordIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/** @deprecated use McqAssignmentDoc */
+export interface AssignmentDoc {
+  wordSetId: number | string;
+  classId: string;
+  className: string;
+  assignedTo: 'all' | string[];
+  teacherId: string;
+  startDate: string;
+  endDate: string;
+  status: 'active' | 'upcoming' | 'completed';
+  createdAt: Timestamp;
+  curriculumSnapshot?: {
+    grade: string;
+    wordIds: string[];
+    sourceType: 'mother' | 'teacher-customized';
+  };
 }

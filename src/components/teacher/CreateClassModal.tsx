@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { createClass } from '../../services/firebase/teacher';
-import { getMotherCurriculum } from '../../services/firebase/curriculum';
+import { getMotherCurriculum } from '../../services/firebase/motherCurriculum';
 import type { LanguageCode } from '../../types/firestore';
 
 interface CreateClassModalProps {

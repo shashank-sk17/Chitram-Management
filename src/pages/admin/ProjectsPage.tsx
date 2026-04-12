@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/common/Button';
@@ -9,6 +10,7 @@ import { useAuth } from '../../features/auth/hooks/useAuth';
 import type { ProjectDoc, SchoolDoc } from '../../types/firestore';
 
 export default function ProjectsPage() {
+  const navigate = useNavigate();
   const { claims } = useAuth();
   const { setProjects } = useProjectStore();
   const [projects, setProjectsLocal] = useState<Array<ProjectDoc & { id: string }>>([]);
@@ -58,8 +60,8 @@ export default function ProjectsPage() {
     project.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getProjectStats = (projectName: string) => {
-    const projectSchools = schools.filter((s) => s.projectId === projectName);
+  const getProjectStats = (projectId: string) => {
+    const projectSchools = schools.filter((s) => s.projectId === projectId);
     return {
       schools: projectSchools.length,
       teachers: projectSchools.reduce((acc, s) => acc + (s.teacherIds?.length || 0), 0),
@@ -75,9 +77,9 @@ export default function ProjectsPage() {
         transition={{ duration: 0.4 }}
         className="mb-xl"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm mb-md">
+        <div className="flex items-center justify-between gap-sm mb-md">
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
-            {isProjectAdmin ? 'My Project 🎯' : 'Projects 🎯'}
+            {isProjectAdmin ? 'My Project' : 'Projects'}
           </h1>
           {!isProjectAdmin && (
             <Button
@@ -85,7 +87,6 @@ export default function ProjectsPage() {
               onPress={() => setShowCreateProject(true)}
               variant="primary"
               size="sm"
-              className="w-auto self-start sm:self-auto"
               icon={<span>➕</span>}
             />
           )}
@@ -105,9 +106,9 @@ export default function ProjectsPage() {
           {!isProjectAdmin && (
             <div className="grid grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
               {[
-                { label: 'Total Projects', count: projects.length, icon: '📁', color: 'bg-gradient-to-br from-lavender-light to-primary/20' },
-                { label: 'Total Schools', count: schools.filter((s) => s.projectId).length, icon: '🏫', color: 'bg-gradient-to-br from-mint-light to-secondary/20' },
-                { label: 'Unassigned Schools', count: schools.filter((s) => !s.projectId).length, icon: '⚠️', color: 'bg-gradient-to-br from-peach-light to-accent/20' },
+                { label: 'Total Projects', count: projects.length, icon: '📁', color: 'bg-lavender-light' },
+                { label: 'Total Schools', count: schools.filter((s) => s.projectId).length, icon: '🏫', color: 'bg-mint-light' },
+                { label: 'Unassigned Schools', count: schools.filter((s) => !s.projectId).length, icon: '⚠️', color: 'bg-peach-light' },
               ].map((stat, index) => (
                 <motion.div
                   key={stat.label}
@@ -158,7 +159,7 @@ export default function ProjectsPage() {
               className="grid grid-cols-1 md:grid-cols-2 gap-md sm:gap-lg"
             >
               {filteredProjects.map((project, index) => {
-                const projStats = getProjectStats(project.name);
+                const projStats = getProjectStats(project.id);
                 return (
                   <motion.div
                     key={project.id}
@@ -166,10 +167,12 @@ export default function ProjectsPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: (isProjectAdmin ? 0.1 : 0.4) + index * 0.1 }}
                     whileHover={{ scale: 1.02, y: -5 }}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/admin/projects/${project.id}`)}
                   >
-                    <Card className="hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-lavender-light/20">
+                    <Card className="hover:shadow-xl transition-shadow bg-white">
                       <div className="flex items-start gap-md mb-lg">
-                        <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                        <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-2xl bg-primary flex items-center justify-center shadow-lg">
                           <span className="text-2xl sm:text-4xl">📁</span>
                         </div>
                         <div className="flex-1">

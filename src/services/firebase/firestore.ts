@@ -382,3 +382,80 @@ export function generateJoinCode(length: number = 6): string {
   }
   return code;
 }
+
+// ── Analytics Query Functions ──────────────────────────────────────────────
+
+export async function getSchoolStats(schoolId: string, days = 30): Promise<Array<{ date: string; activeStudents: number; totalStudents: number; avgAccuracy: number; attempts: number; practiceMinutes: number; completionRate: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'schools', schoolId, 'stats'), where('date', '>=', dateKey), orderBy('date', 'asc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getClassStats(classId: string, days = 30): Promise<Array<{ date: string; activeStudents: number; students: number; avgAccuracy: number; engagementScore: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'classes', classId, 'stats'), where('date', '>=', dateKey), orderBy('date', 'asc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getStudentDailyStats(studentId: string, days = 30): Promise<Array<{ date: string; wordsLearned: number; accuracy: number; sessionsCount: number; practiceMinutes: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'students', studentId, 'stats'), where('date', '>=', dateKey), orderBy('date', 'asc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getProjectStats(projectId: string, days = 30): Promise<Array<{ date: string; activeStudents: number; totalStudents: number; activeSchools: number; totalSchools: number; avgAccuracy: number; attempts: number; practiceMinutes: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'projects', projectId, 'stats'), where('date', '>=', dateKey), orderBy('date', 'asc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getLearningAttemptsByClass(classId: string, days = 7): Promise<Array<{ studentUid: string; levelId: string; date: string; wordsLearned: number; accuracy: number; lang: string }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'learningAttempts'), where('classId', '==', classId), where('date', '>=', dateKey), orderBy('date', 'desc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getLearningAttemptsBySchool(schoolId: string, days = 30): Promise<Array<{ studentUid: string; classId: string; levelId: string; date: string; wordsLearned: number; accuracy: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'learningAttempts'), where('schoolId', '==', schoolId), where('date', '>=', dateKey), orderBy('date', 'desc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getLearningAttemptsByProject(projectId: string, days = 30): Promise<Array<{ studentUid: string; classId: string; schoolId: string; levelId: string; date: string; wordsLearned: number; accuracy: number }>> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateKey = cutoff.toISOString().split('T')[0];
+  const snap = await getDocs(
+    query(collection(db, 'learningAttempts'), where('projectId', '==', projectId), where('date', '>=', dateKey), orderBy('date', 'desc'))
+  );
+  return snap.docs.map(d => d.data() as any);
+}
+
+export async function getStudentWordProgress(studentId: string): Promise<Array<{ wordId: string; accuracy: number; attempts: number; learned: boolean }>> {
+  const snap = await getDocs(collection(db, 'students', studentId, 'wordProgress'));
+  return snap.docs.map(d => ({ wordId: d.id, ...d.data() as any }));
+}

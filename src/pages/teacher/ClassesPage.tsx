@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTeacherStore } from '../../stores/teacherStore';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { CreateClassModal } from '../../components/teacher/CreateClassModal';
 import { useNavigate } from 'react-router-dom';
+import type { TeacherDoc } from '../../types/firestore';
 
 function CopyCodeButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -43,10 +46,17 @@ export default function TeacherClassesPage() {
 
   const [showCreateClass, setShowCreateClass] = useState(false);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
+  const [schoolId, setSchoolId] = useState<string>('');
 
-  // Get school ID from user data (stored during teacher auth)
-  // For now, we'll use a placeholder - this would come from the user document
-  const schoolId = 'default-school'; // TODO: Get from user document
+  // Fetch teacher's schoolId from Firestore
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'teachers', user.uid)).then((snap) => {
+      if (snap.exists()) {
+        setSchoolId((snap.data() as TeacherDoc).schoolId ?? '');
+      }
+    });
+  }, [user]);
 
   // Listen to teacher's classes
   useEffect(() => {
@@ -121,7 +131,7 @@ export default function TeacherClassesPage() {
             variant="primary"
             size="sm"
             icon={<span>🏫</span>}
-            className="w-auto self-start sm:self-auto"
+            disabled={!schoolId}
           />
         </div>
 

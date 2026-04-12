@@ -10,7 +10,7 @@ import {
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import type { ClassDoc, StudentDoc, AssignmentDoc } from '../types/firestore';
+import type { ClassDoc, StudentDoc } from '../types/firestore';
 
 interface TeacherState {
   // Classes managed by this teacher
@@ -19,27 +19,21 @@ interface TeacherState {
   // All students in teacher's classes
   students: Array<StudentDoc & { id: string }>;
 
-  // All assignments created by this teacher
-  assignments: Array<AssignmentDoc & { id: string }>;
-
   // Selected class for scoped views
   selectedClassId: string | null;
 
   // Loading states
   loadingClasses: boolean;
   loadingStudents: boolean;
-  loadingAssignments: boolean;
 
   // Actions
   setClasses: (classes: Array<ClassDoc & { id: string }>) => void;
   setStudents: (students: Array<StudentDoc & { id: string }>) => void;
-  setAssignments: (assignments: Array<AssignmentDoc & { id: string }>) => void;
   setSelectedClassId: (classId: string | null) => void;
 
   // Real-time listeners
   listenToTeacherClasses: (teacherId: string) => () => void;
   listenToClassStudents: (classId: string) => () => void;
-  listenToTeacherAssignments: (teacherId: string) => () => void;
 
   // Student approval actions
   approveStudent: (classId: string, studentId: string) => Promise<void>;
@@ -48,21 +42,17 @@ interface TeacherState {
   // Derived data
   getStudentsForClass: (classId: string) => Array<StudentDoc & { id: string }>;
   getPendingStudentsForClass: (classId: string) => Array<StudentDoc & { id: string }>;
-  getAssignmentsForClass: (classId: string) => Array<AssignmentDoc & { id: string }>;
 }
 
 export const useTeacherStore = create<TeacherState>((set, get) => ({
   classes: [],
   students: [],
-  assignments: [],
   selectedClassId: null,
   loadingClasses: false,
   loadingStudents: false,
-  loadingAssignments: false,
 
   setClasses: (classes) => set({ classes }),
   setStudents: (students) => set({ students }),
-  setAssignments: (assignments) => set({ assignments }),
   setSelectedClassId: (classId) => set({ selectedClassId: classId }),
 
   // Listen to teacher's classes
@@ -101,41 +91,20 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const students: Array<StudentDoc & { id: string }> = [];
-
+        const incoming: Array<StudentDoc & { id: string }> = [];
         snapshot.forEach((doc) => {
-          students.push({ id: doc.id, ...(doc.data() as StudentDoc) });
+          incoming.push({ id: doc.id, ...(doc.data() as StudentDoc) });
         });
 
-        set({ students, loadingStudents: false });
+        // Merge with existing students — don't overwrite other classes' students
+        set((state) => {
+          const merged = [...state.students.filter((s) => !incoming.some((i) => i.id === s.id)), ...incoming];
+          return { students: merged, loadingStudents: false };
+        });
       },
       (error) => {
         console.error('Error listening to students:', error);
         set({ loadingStudents: false });
-      }
-    );
-
-    return unsubscribe;
-  },
-
-  // Listen to teacher's assignments
-  listenToTeacherAssignments: (teacherId) => {
-    set({ loadingAssignments: true });
-
-    const q = query(collection(db, 'assignments'), where('teacherId', '==', teacherId));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const assignments: Array<AssignmentDoc & { id: string }> = [];
-        snapshot.forEach((doc) => {
-          assignments.push({ id: doc.id, ...doc.data() } as AssignmentDoc & { id: string });
-        });
-        set({ assignments, loadingAssignments: false });
-      },
-      (error) => {
-        console.error('Error listening to assignments:', error);
-        set({ loadingAssignments: false });
       }
     );
 
@@ -209,9 +178,4 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
     );
   },
 
-  // Get assignments for a specific class
-  getAssignmentsForClass: (classId) => {
-    const state = get();
-    return state.assignments.filter((a) => a.classId === classId);
-  },
 }));
