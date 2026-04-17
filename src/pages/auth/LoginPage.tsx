@@ -54,6 +54,8 @@ const roleRouteMap: Record<string, string> = {
   teacher: '/teacher',
   pm: '/pm',
   principal: '/principal',
+  contentWriter: '/writer',
+  contentReviewer: '/reviewer',
 };
 
 const shakeVariants: Variants = {

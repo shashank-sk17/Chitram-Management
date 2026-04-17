@@ -144,7 +144,7 @@ function validateClaims(claims: any): CustomClaims | null {
     return null;
   }
 
-  const validRoles = ['admin', 'projectAdmin', 'pm', 'principal', 'teacher'];
+  const validRoles = ['admin', 'projectAdmin', 'pm', 'principal', 'teacher', 'contentWriter', 'contentReviewer'];
   if (!validRoles.includes(claims.role)) {
     return null;
   }

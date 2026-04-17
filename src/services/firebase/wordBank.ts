@@ -113,6 +113,18 @@ export async function rejectWord(wordId: string, adminUid: string, note: string)
   });
 }
 
+export async function getTeacherPendingWords(
+  teacherUid: string,
+): Promise<Array<{ id: string } & WordBankDoc>> {
+  const q = query(
+    collection(db, COL),
+    where('status', '==', 'pending'),
+    where('submittedBy', '==', teacherUid),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as WordBankDoc) }));
+}
+
 export async function getPendingWordsCount(): Promise<number> {
   const snap = await getCountFromServer(
     query(collection(db, COL), where('status', '==', 'pending'))
@@ -120,23 +132,48 @@ export async function getPendingWordsCount(): Promise<number> {
   return snap.data().count;
 }
 
-export async function uploadWordImage(wordId: string, file: File): Promise<string> {
-  const storageRef = ref(storage, `wordbank-images/${wordId}/image.jpg`);
+export async function uploadWordImage(wordId: string, file: File, index: 0 | 1 | 2 = 0): Promise<string> {
+  const path = `wordbank-images/${wordId}/image_${index}.jpg`;
+  const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file, { contentType: 'image/jpeg' });
   const url = await getDownloadURL(storageRef);
+
+  // Read current arrays, splice in new values at position index
+  const snap = await getDoc(doc(db, COL, wordId));
+  const existing = snap.exists() ? (snap.data() as any) : {};
+  const imageUrls: string[] = [...(existing.imageUrls ?? [null, null, null])];
+  const imagePaths: string[] = [...(existing.imageStoragePaths ?? [null, null, null])];
+  imageUrls[index] = url;
+  imagePaths[index] = path;
+
+  const trimmed = imageUrls.filter(Boolean);
   await updateDoc(doc(db, COL, wordId), {
-    imageUrl: url,
-    imageStoragePath: `wordbank-images/${wordId}/image.jpg`,
+    imageUrl: trimmed[0] ?? null,
+    imageStoragePath: imagePaths[0] ?? null,
+    imageUrls: trimmed,
+    imageStoragePaths: imagePaths.filter(Boolean),
     updatedAt: serverTimestamp(),
   });
   return url;
 }
 
+export interface TeacherMeta {
+  teacherUid: string;
+  teacherName?: string;
+  schoolId?: string;
+  schoolName?: string;
+  projectId?: string;
+  gradeContext?: number;
+}
+
 export async function createPendingWord(
   data: Omit<Partial<WordBankDoc>, 'status' | 'createdAt' | 'updatedAt'>,
-  teacherUid: string,
-  projectId?: string,
+  meta: TeacherMeta | string,
 ): Promise<string> {
+  // Accept either legacy string (teacherUid) or full TeacherMeta object
+  const teacherMeta: TeacherMeta = typeof meta === 'string' ? { teacherUid: meta } : meta;
+  const { teacherUid, teacherName, schoolId, schoolName, projectId, gradeContext } = teacherMeta;
+
   const empty: Record<LanguageCode, string> = { te: '', en: '', hi: '', mr: '', es: '', fr: '' };
   const emptyNull: Record<LanguageCode, null> = { te: null, en: null, hi: null, mr: null, es: null, fr: null };
 
@@ -154,7 +191,11 @@ export async function createPendingWord(
     audioUrl: { word: { ...emptyNull }, meaning: { ...emptyNull }, sentence: { ...emptyNull } },
     ...data,
     submittedBy: teacherUid,
-    ...(projectId ? { projectId } : {}),
+    ...(teacherName ? { submittedByName: teacherName } : {}),
+    ...(schoolId ? { submittedBySchoolId: schoolId } : {}),
+    ...(schoolName ? { submittedBySchoolName: schoolName } : {}),
+    ...(projectId ? { submittedByProjectId: projectId, projectId } : {}),
+    ...(gradeContext ? { gradeContext } : {}),
     submittedAt: serverTimestamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

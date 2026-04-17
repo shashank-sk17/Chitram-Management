@@ -10,7 +10,6 @@ import {
   getClassesBySchool,
   getLearningAttemptsByProject,
 } from '../../services/firebase/firestore';
-import type { SchoolDoc } from '../../types/firestore';
 
 interface SchoolRow {
   id: string;

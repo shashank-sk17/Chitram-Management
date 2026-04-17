@@ -210,14 +210,16 @@ See [RBAC.md](RBAC.md) for the full reference including per-collection read/writ
 | `pm` | `{ role: 'pm', projectId: string }` |
 | `principal` | `{ role: 'principal', schoolIds: string[] }` |
 | `teacher` | `{ role: 'teacher', schoolId: string }` |
+| `contentWriter` | `{ role: 'contentWriter' }` |
+| `contentReviewer` | `{ role: 'contentReviewer' }` |
 
 Claims are set via the `inviteUser` Cloud Function (admin/PM/principal/projectAdmin) or `registerTeacher` CF (teachers). The user must **sign out and sign back in** after a role change.
 
 ### Creating Users
 
-**Admin-level roles (admin, projectAdmin, pm, principal):**
+**Admin-level roles (admin, projectAdmin, pm, principal, contentWriter, contentReviewer):**
 1. Log in as super admin → Users → Invite User
-2. Fill email, display name, role, and scope (projectId / schoolIds)
+2. Fill email, display name, role, and scope (projectId / schoolIds where applicable)
 3. A password setup link is returned — share it with the invitee
 
 **Teachers:**
@@ -276,6 +278,19 @@ Claims are set via the `inviteUser` Cloud Function (admin/PM/principal/projectAd
 | Dashboard | `/principal/dashboard` | Real-time: teacher count, student count, class count, avg accuracy (7d) |
 | Analytics | `/principal/analytics` | Class metrics, teacher activity, at-risk student flags |
 
+### Content Writer
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Word Editor | `/writer` | Create and edit vocabulary words across 6 languages; upload up to 3 images per word; submit to review queue (not direct-publish) |
+| CSV Import | `/writer/import` | Bulk upload words from a CSV file; preview and validate before importing; all imports enter the review queue as pending |
+
+### Content Reviewer
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Review Queue | `/reviewer` | Approve or reject pending word submissions from content writers; view all 6-language content with TTS per field; inline edit before approving; add rejection notes |
+
 ---
 
 ## Architecture
@@ -315,6 +330,44 @@ Five Zustand stores:
 | `curriculumStore` | No (one-time fetch) | words, curricula, pending counts |
 | `assignmentStore` | No | assignments, submissions |
 | `projectStore` | No | projects[], schools[] |
+
+### Analytics Visibility Controls
+
+Super admins can control which analytics sections are visible to each role, project, or individual user in real time via **Admin → Analytics Controls**.
+
+Resolution order (most specific wins): **user override > project override > role default**
+
+```
+analyticsVisibility/{role}           ← role defaults (pm, principal, projectAdmin, teacher)
+analyticsVisibility/project:{id}     ← project-level override
+analyticsVisibility/user:{uid}       ← per-user override
+```
+
+The `useAnalyticsVisibility({ role, projectId?, uid? })` hook subscribes to all three levels via `onSnapshot` and merges them automatically. Sections that don't have an explicit override show as "inherited" in the admin UI.
+
+Available sections: `overviewStats`, `engagementMetrics`, `studentTable`, `teacherTable`, `gradeDistribution`, `gamification`, `atRiskStudents`, `hardestWords`, `assignmentMetrics`.
+
+### Content Pipeline
+
+Words flow through a review pipeline before reaching students:
+
+```
+Content Writer → wordBank (status: pending)
+                     ↓
+         Content Reviewer / Admin reviews
+                     ↓
+              Approved → status: active → appears in student app
+              Rejected → status: rejected → writer notified via rejectionNote
+```
+
+Each word supports up to **3 images** (`imageUrls[]`) and content across 6 languages (te, en, hi, mr, es, fr). Bulk uploads are supported via CSV import.
+
+**CSV format:**
+```
+word_te, word_en, word_hi, word_mr, word_es, word_fr,
+pronunciation_te..fr, meaning_te..fr, sentence_te..fr,
+wordType, difficulty
+```
 
 ### Analytics Architecture
 
@@ -373,7 +426,8 @@ curriculumEdits/{editId}          ← teacher proposes → admin approves
 | `classes/{id}` | Class: studentIds, pendingStudentIds, teacherId, schoolId, grade, language |
 | `schools/{id}` | School: name, code, projectId, teacherIds |
 | `projects/{id}` | Project: name, description, schoolIds |
-| `wordBank/{id}` | Vocabulary: status(active/pending/rejected), wordType, all language fields |
+| `wordBank/{id}` | Vocabulary: status(active/pending/rejected), wordType, imageUrls[], all language fields |
+| `analyticsVisibility/{docId}` | Analytics section toggles — role defaults (`pm`, `teacher`, …), project overrides (`project:{id}`), user overrides (`user:{uid}`) |
 | `languageCurricula/{lang}_g{n}` | Master curriculum levels per language per grade |
 | `curriculumEdits/{id}` | Teacher edit proposals: proposedLevels, pendingWordIds, status |
 | `mcqAssignments/{id}` | MCQ assignments: questions, dueDate, totalPoints, status |
@@ -542,8 +596,8 @@ The teacher's `schoolId` couldn't be fetched from `teachers/{uid}`. Check:
 - The `schoolId` field is set (not null/empty)
 - The teacher is in the school's `teacherIds` array
 
-### Invite User: "role must be admin|pm|principal|projectAdmin"
-This error comes from the `inviteUser` Cloud Function. Use only supported roles in the modal. Teachers self-register with a school code — do not invite them via this form.
+### Invite User: role not supported error
+The `inviteUser` Cloud Function validates the role server-side. Supported roles: `admin`, `projectAdmin`, `pm`, `principal`, `contentWriter`, `contentReviewer`. Teachers self-register with a school code — do not invite them via this form.
 
 ### Word Bank shows no words
 Check:

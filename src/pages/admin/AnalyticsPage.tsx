@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, StatCard } from '../../components/common/Card';
+import { GamificationPanel, type GamificationStudent } from '../../components/common/GamificationPanel';
 import { StatCardSkeleton, RowSkeleton } from '../../components/common/Skeleton';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useCurriculumStore } from '../../stores/curriculumStore';
@@ -321,6 +322,52 @@ export default function AdminAnalyticsPage() {
     }
     return map;
   }, [projects, schools, schoolMetricsMap]);
+
+  // ── Gamification filter options ─────────────────────────────────────────────
+  const gamifProjectOptions = useMemo(() =>
+    projects.map(p => ({ id: p.id, name: p.name }))
+  , [projects]);
+
+  const gamifSchoolOptions = useMemo(() =>
+    schools.map(s => ({ id: s.id, name: s.name }))
+  , [schools]);
+
+  // Derive class options from what's in the student docs (classId field)
+  const gamifClassOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { id: string; name: string }[] = [];
+    studentDocs.forEach(s => {
+      const cid = s.classId ?? (s.classIds?.[0]);
+      if (cid && !seen.has(cid)) {
+        seen.add(cid);
+        opts.push({ id: cid, name: `Class ${cid.slice(0, 6)}` }); // label refined below
+      }
+    });
+    return opts;
+  }, [studentDocs]);
+
+  // ── Gamification students memo ──────────────────────────────────────────────
+  const gamifStudents = useMemo((): GamificationStudent[] =>
+    studentDocs.map(s => {
+      // Find which project this student's school belongs to
+      const school = schools.find(sc => sc.id === s.schoolId);
+      const projectId = (school as any)?.projectId;
+      return {
+        id: s.id,
+        name: s.name,
+        avatarColor: s.avatarColor ?? '#7C81FF',
+        xp: (s.analytics as any)?.xp ?? 0,
+        weeklyXP: (s.analytics as any)?.weeklyXP ?? 0,
+        playerLevel: (s.analytics as any)?.playerLevel ?? 1,
+        badges: (s.analytics as any)?.badges ?? [],
+        streakDays: s.analytics?.streakDays ?? 0,
+        learnedWords: s.analytics?.totalWordsLearned ?? 0,
+        projectId,
+        schoolId: s.schoolId ?? undefined,
+        classId: s.classId ?? s.classIds?.[0],
+      };
+    })
+  , [studentDocs, schools]);
 
   // ── Platform-level learner stats ────────────────────────────────────────────
   const platformStats = useMemo(() => {
@@ -895,6 +942,28 @@ export default function AdminAnalyticsPage() {
             </Card>
           </motion.div>
         </>
+      )}
+
+      {/* Gamification — platform-wide leaderboard */}
+      {!loadingPhase1 && studentDocs.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.8 }}
+          className="mt-xl"
+        >
+          <div className="mb-lg">
+            <h2 className="font-baloo font-bold text-xl text-text-dark">Gamification 🏆</h2>
+            <p className="font-baloo text-sm text-text-muted">Platform-wide XP leaderboard, badges and player levels</p>
+          </div>
+          <GamificationPanel
+            students={gamifStudents}
+            loading={loadingPhase1}
+            projects={gamifProjectOptions}
+            schools={gamifSchoolOptions}
+            classes={gamifClassOptions}
+          />
+        </motion.div>
       )}
     </div>
   );

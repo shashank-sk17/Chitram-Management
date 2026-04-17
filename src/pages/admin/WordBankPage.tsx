@@ -15,6 +15,74 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 type WordWithId = { id: string } & WordBankDoc;
+type ModalTab = 'review' | 'content' | 'media' | 'settings';
+
+// ── Read-only field display ───────────────────────────────────────────────────
+function FieldRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <span className="font-baloo text-xs text-text-muted block mb-0.5 capitalize">{label}</span>
+      <span className="font-baloo text-sm text-text-dark">{value}</span>
+    </div>
+  );
+}
+
+// ── TTS helper ───────────────────────────────────────────────────────────────
+const LANG_BCP47: Record<LanguageCode, string> = {
+  te: 'te-IN', en: 'en-US', hi: 'hi-IN', mr: 'mr-IN', es: 'es-ES', fr: 'fr-FR',
+};
+function speakText(text: string, lang: LanguageCode) {
+  if (!text || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = LANG_BCP47[lang];
+  window.speechSynthesis.speak(utt);
+}
+
+// ── Language content card (review mode) ──────────────────────────────────────
+function LangCard({ lang, word }: { lang: LanguageCode; word: WordBankDoc }) {
+  const wordVal = word.word?.[lang];
+  const pronVal = word.pronunciation?.[lang];
+  const meaningVal = word.meaning?.[lang];
+  const sentenceVal = word.sentence?.[lang];
+
+  if (!wordVal && !meaningVal) return null;
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-md space-y-sm border border-divider">
+      <div className="flex items-center justify-between gap-xs mb-xs">
+        <span className="font-baloo font-bold text-sm text-primary">{LANGUAGE_LABELS[lang]}</span>
+        <div className="flex gap-xs">
+          {wordVal && (
+            <button onClick={() => speakText(wordVal, lang)} title="Hear word"
+              className="text-xs px-xs py-0.5 rounded-lg bg-white border border-divider text-text-muted hover:text-primary hover:border-primary transition-colors font-baloo">
+              🔊 Word
+            </button>
+          )}
+          {meaningVal && (
+            <button onClick={() => speakText(meaningVal, lang)} title="Hear meaning"
+              className="text-xs px-xs py-0.5 rounded-lg bg-white border border-divider text-text-muted hover:text-secondary hover:border-secondary transition-colors font-baloo">
+              🔊 Meaning
+            </button>
+          )}
+          {sentenceVal && (
+            <button onClick={() => speakText(sentenceVal, lang)} title="Hear sentence"
+              className="text-xs px-xs py-0.5 rounded-lg bg-white border border-divider text-text-muted hover:text-accent hover:border-accent transition-colors font-baloo">
+              🔊 Sentence
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-sm">
+        <FieldRow label="Word" value={wordVal} />
+        <FieldRow label="Pronunciation" value={pronVal} />
+        <FieldRow label="Meaning" value={meaningVal} />
+        <FieldRow label="Sentence" value={sentenceVal} />
+      </div>
+    </div>
+  );
+}
 
 export default function WordBankPage() {
   const { user } = useAuthStore();
@@ -24,12 +92,10 @@ export default function WordBankPage() {
 
   const [words, setWords] = useState<WordWithId[]>([]);
   const [loading, setLoading] = useState(false);
-  const [_filters, _setFilters] = useState<WordBankFilters>({ status: undefined });
-  // Project admins default to "pending" tab since they only act on submissions in their project
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'pending' | 'rejected'>(isProjectAdmin ? 'pending' : 'all');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'pending' | 'rejected'>(isProjectAdmin ? 'pending' : 'active');
   const [search, setSearch] = useState('');
   const [editWord, setEditWord] = useState<WordWithId | null>(null);
-  const [editTab, setEditTab] = useState<'content' | 'media' | 'settings'>('content');
+  const [modalTab, setModalTab] = useState<ModalTab>('review');
   const [editForm, setEditForm] = useState<Partial<WordBankDoc>>({});
   const [saving, setSaving] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
@@ -49,17 +115,17 @@ export default function WordBankPage() {
     const f: WordBankFilters = {
       status: activeTab === 'all' ? undefined : activeTab as any,
       search: search || undefined,
-      // Project admins only see words submitted within their project
       projectId: isProjectAdmin && myProjectId ? myProjectId : undefined,
     };
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => load(f), search ? 300 : 0);
   }, [activeTab, search, isProjectAdmin, myProjectId]);
 
-  const openEdit = (w: WordWithId) => {
+  const openWord = (w: WordWithId) => {
     setEditWord(w);
     setEditForm({ ...w });
-    setEditTab('content');
+    // Pending words open on Review tab so admin sees full details before acting
+    setModalTab(w.status === 'pending' ? 'review' : 'content');
     setShowRejectInput(false);
     setRejectNote('');
   };
@@ -71,7 +137,9 @@ export default function WordBankPage() {
       await updateWord(editWord.id, editForm);
       setWords(prev => prev.map(w => w.id === editWord.id ? { ...w, ...editForm } : w));
       setEditWord(null);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to save word:', err);
+    }
     setSaving(false);
   };
 
@@ -82,7 +150,9 @@ export default function WordBankPage() {
       await approveWord(wordId, user.uid);
       setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: 'active', active: true } : w));
       setEditWord(null);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to approve word:', err);
+    }
     setSaving(false);
   };
 
@@ -93,7 +163,9 @@ export default function WordBankPage() {
       await rejectWord(wordId, user.uid, rejectNote);
       setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: 'rejected' } : w));
       setEditWord(null);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to reject word:', err);
+    }
     setSaving(false);
   };
 
@@ -104,7 +176,9 @@ export default function WordBankPage() {
       const url = await uploadWordImage(editWord.id, e.target.files[0]);
       setEditForm(prev => ({ ...prev, imageUrl: url }));
       setWords(prev => prev.map(w => w.id === editWord.id ? { ...w, imageUrl: url } : w));
-    } catch {}
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+    }
     setSaving(false);
   };
 
@@ -114,6 +188,11 @@ export default function WordBankPage() {
     pending: words.filter(w => w.status === 'pending').length,
     rejected: words.filter(w => w.status === 'rejected').length,
   };
+
+  const isPending = editWord?.status === 'pending';
+  const modalTabs: { id: ModalTab; label: string }[] = isPending
+    ? [{ id: 'review', label: '👁 Review' }, { id: 'content', label: 'Content' }, { id: 'media', label: 'Media' }, { id: 'settings', label: 'Settings' }]
+    : [{ id: 'content', label: 'Content' }, { id: 'media', label: 'Media' }, { id: 'settings', label: 'Settings' }];
 
   return (
     <div className="space-y-lg">
@@ -178,8 +257,9 @@ export default function WordBankPage() {
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark w-16">Image</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Telugu</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">English</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Pronunciation</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Meaning (EN)</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Type</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Difficulty</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Status</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Actions</th>
               </tr>
@@ -187,13 +267,13 @@ export default function WordBankPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-md py-xl text-center font-baloo text-text-muted">
+                  <td colSpan={9} className="px-md py-xl text-center font-baloo text-text-muted">
                     Loading words…
                   </td>
                 </tr>
               ) : words.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-md py-xl text-center font-baloo text-text-muted">
+                  <td colSpan={9} className="px-md py-xl text-center font-baloo text-text-muted">
                     No words found
                   </td>
                 </tr>
@@ -210,34 +290,27 @@ export default function WordBankPage() {
                     </td>
                     <td className="px-md py-sm font-baloo font-semibold text-sm text-text-dark">{w.word?.te || '—'}</td>
                     <td className="px-md py-sm font-baloo text-sm text-text-muted">{w.word?.en || '—'}</td>
+                    <td className="px-md py-sm font-baloo text-sm text-text-muted">{w.pronunciation?.te || w.pronunciation?.en || '—'}</td>
+                    <td className="px-md py-sm font-baloo text-sm text-text-muted max-w-[160px] truncate">{w.meaning?.en || '—'}</td>
                     <td className="px-md py-sm">
                       <span className="px-sm py-0.5 bg-lavender-light text-primary font-baloo font-semibold text-xs rounded-full">{w.wordType}</span>
                     </td>
-                    <td className="px-md py-sm font-baloo text-sm text-text-muted">{w.difficulty}</td>
                     <td className="px-md py-sm">
                       <span className={`px-sm py-0.5 font-baloo font-semibold text-xs rounded-full capitalize ${STATUS_BADGE[w.status] || ''}`}>
                         {w.status}
                       </span>
                     </td>
                     <td className="px-md py-sm">
-                      <div className="flex items-center gap-xs">
-                        <button
-                          onClick={() => openEdit(w)}
-                          className="px-sm py-xs bg-lavender-light text-primary font-baloo font-semibold text-xs rounded-lg hover:bg-primary hover:text-white transition-colors"
-                        >
-                          Edit
-                        </button>
-                        {w.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(w.id)}
-                              className="px-sm py-xs bg-success/10 text-success font-baloo font-semibold text-xs rounded-lg hover:bg-success hover:text-white transition-colors"
-                            >
-                              ✓
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => openWord(w)}
+                        className={`px-sm py-xs font-baloo font-semibold text-xs rounded-lg transition-colors ${
+                          w.status === 'pending'
+                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : 'bg-lavender-light text-primary hover:bg-primary hover:text-white'
+                        }`}
+                      >
+                        {w.status === 'pending' ? '👁 Review' : 'Edit'}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -247,7 +320,7 @@ export default function WordBankPage() {
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/* Word Detail Modal */}
       <AnimatePresence>
         {editWord && (
           <>
@@ -261,32 +334,41 @@ export default function WordBankPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed inset-x-4 top-8 bottom-8 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[680px] bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
+              className="fixed inset-x-4 top-8 bottom-8 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[720px] bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
             >
               {/* Modal header */}
               <div className="px-lg py-md border-b border-divider bg-lavender-light/30">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-baloo font-bold text-lg text-text-dark">
-                      {editWord.word?.en || 'Edit Word'}
-                    </h2>
-                    <span className={`text-xs font-baloo font-semibold px-sm py-0.5 rounded-full capitalize ${STATUS_BADGE[editWord.status] || ''}`}>
-                      {editWord.status}
-                    </span>
+                  <div className="flex items-center gap-sm">
+                    <div>
+                      <h2 className="font-baloo font-bold text-lg text-text-dark">
+                        {editWord.word?.te || editWord.word?.en || 'Word Details'}
+                        {editWord.word?.en && editWord.word?.te && (
+                          <span className="text-text-muted font-normal ml-sm text-base">· {editWord.word.en}</span>
+                        )}
+                      </h2>
+                      <div className="flex items-center gap-xs mt-0.5">
+                        <span className={`text-xs font-baloo font-semibold px-sm py-0.5 rounded-full capitalize ${STATUS_BADGE[editWord.status] || ''}`}>
+                          {editWord.status}
+                        </span>
+                        <span className="text-xs font-baloo text-text-muted px-sm py-0.5 bg-white/60 rounded-full">{editWord.wordType}</span>
+                        <span className="text-xs font-baloo text-text-muted px-sm py-0.5 bg-white/60 rounded-full">{editWord.difficulty}</span>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={() => setEditWord(null)} className="w-8 h-8 rounded-full bg-white/60 flex items-center justify-center">✕</button>
+                  <button onClick={() => setEditWord(null)} className="w-8 h-8 rounded-full bg-white/60 flex items-center justify-center text-text-muted hover:text-text-dark">✕</button>
                 </div>
                 {/* Tabs */}
                 <div className="flex gap-xs mt-sm">
-                  {(['content', 'media', 'settings'] as const).map(t => (
+                  {modalTabs.map(t => (
                     <button
-                      key={t}
-                      onClick={() => setEditTab(t)}
-                      className={`px-md py-xs rounded-lg font-baloo font-semibold text-sm capitalize transition-all ${
-                        editTab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-dark'
+                      key={t.id}
+                      onClick={() => setModalTab(t.id)}
+                      className={`px-md py-xs rounded-lg font-baloo font-semibold text-sm transition-all ${
+                        modalTab === t.id ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-dark'
                       }`}
                     >
-                      {t}
+                      {t.label}
                     </button>
                   ))}
                 </div>
@@ -294,7 +376,142 @@ export default function WordBankPage() {
 
               {/* Modal body */}
               <div className="flex-1 overflow-y-auto p-lg space-y-md">
-                {editTab === 'content' && (
+
+                {/* ── Review tab ── */}
+                {modalTab === 'review' && (
+                  <div className="space-y-md">
+                    {/* Image + meta row */}
+                    <div className="flex gap-md">
+                      {/* Image */}
+                      <div className="flex-shrink-0">
+                        {editWord.imageUrl ? (
+                          <img
+                            src={editWord.imageUrl}
+                            alt={editWord.word?.en || ''}
+                            className="w-40 h-40 object-cover rounded-2xl border border-divider shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-40 h-40 rounded-2xl bg-lavender-light/60 border-2 border-dashed border-divider flex flex-col items-center justify-center gap-sm text-text-muted">
+                            <span className="text-4xl">🖼</span>
+                            <span className="font-baloo text-xs">No image</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Submitter meta */}
+                      <div className="flex-1 space-y-sm">
+                        <div className="bg-amber-50 rounded-xl p-md space-y-xs border border-amber-100">
+                          <p className="font-baloo font-bold text-sm text-amber-700">Pending Review</p>
+                          <div className="space-y-1">
+                            {editWord.submittedByName ? (
+                              <p className="font-baloo text-xs text-amber-600">
+                                Teacher: <span className="font-semibold text-amber-800">{editWord.submittedByName}</span>
+                              </p>
+                            ) : editWord.submittedBy ? (
+                              <p className="font-baloo text-xs text-amber-600">
+                                Teacher UID: <span className="font-semibold font-mono">{editWord.submittedBy.slice(0, 12)}…</span>
+                              </p>
+                            ) : null}
+                            {editWord.submittedBySchoolName ? (
+                              <p className="font-baloo text-xs text-amber-600">
+                                School: <span className="font-semibold text-amber-800">{editWord.submittedBySchoolName}</span>
+                              </p>
+                            ) : editWord.submittedBySchoolId ? (
+                              <p className="font-baloo text-xs text-amber-600">
+                                School ID: <span className="font-semibold font-mono">{editWord.submittedBySchoolId.slice(0, 10)}…</span>
+                              </p>
+                            ) : null}
+                            {editWord.submittedByProjectId && (
+                              <p className="font-baloo text-xs text-amber-600">
+                                Project: <span className="font-semibold font-mono">{editWord.submittedByProjectId.slice(0, 10)}…</span>
+                              </p>
+                            )}
+                            {editWord.gradeContext && (
+                              <p className="font-baloo text-xs text-amber-600">
+                                Grade: <span className="font-semibold text-amber-800">{editWord.gradeContext}</span>
+                              </p>
+                            )}
+                            {editWord.submittedAt && (
+                              <p className="font-baloo text-xs text-amber-600">
+                                Submitted: <span className="font-semibold">{(editWord.submittedAt as any).toDate?.().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) || '—'}</span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-xs">
+                          <div className="bg-gray-50 rounded-lg px-sm py-xs">
+                            <p className="font-baloo text-xs text-text-muted">Type</p>
+                            <p className="font-baloo font-semibold text-sm text-text-dark">{editWord.wordType}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg px-sm py-xs">
+                            <p className="font-baloo text-xs text-text-muted">Difficulty</p>
+                            <p className="font-baloo font-semibold text-sm text-text-dark">{editWord.difficulty}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Language content cards */}
+                    <div>
+                      <p className="font-baloo font-bold text-sm text-text-dark mb-sm">Word Content</p>
+                      <div className="space-y-sm">
+                        {LANGS.map(lang => (
+                          <LangCard key={lang} lang={lang} word={editWord} />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Approve / Reject */}
+                    <div className="border-t border-divider pt-md">
+                      {showRejectInput ? (
+                        <div className="space-y-sm">
+                          <p className="font-baloo font-bold text-sm text-error">Rejection reason</p>
+                          <textarea
+                            value={rejectNote}
+                            onChange={e => setRejectNote(e.target.value)}
+                            placeholder="Explain why this word is being rejected…"
+                            rows={3}
+                            className="w-full px-md py-sm rounded-xl border border-error/40 font-baloo text-sm focus:outline-none focus:ring-1 focus:ring-error"
+                          />
+                          <div className="flex gap-sm">
+                            <button onClick={() => setShowRejectInput(false)} className="flex-1 py-sm rounded-xl border-2 border-divider font-baloo font-semibold text-sm text-text-muted">
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleReject(editWord.id)}
+                              disabled={!rejectNote.trim() || saving}
+                              className="flex-1 py-sm rounded-xl bg-error text-white font-baloo font-bold text-sm disabled:opacity-50"
+                            >
+                              {saving ? 'Rejecting…' : 'Confirm Reject'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-sm">
+                          <button
+                            onClick={() => handleApprove(editWord.id)}
+                            disabled={saving}
+                            className="flex-1 py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors shadow-sm"
+                          >
+                            {saving ? 'Approving…' : '✓ Approve Word'}
+                          </button>
+                          <button
+                            onClick={() => setShowRejectInput(true)}
+                            className="flex-1 py-md rounded-xl border-2 border-error text-error font-baloo font-bold text-base hover:bg-error hover:text-white transition-colors"
+                          >
+                            ✕ Reject
+                          </button>
+                        </div>
+                      )}
+                      <p className="font-baloo text-xs text-text-muted text-center mt-sm">
+                        Switch to the Content tab to edit word details before approving.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Content tab (editable) ── */}
+                {modalTab === 'content' && (
                   <div className="space-y-md">
                     {LANGS.map(lang => (
                       <div key={lang} className="bg-gray-50 rounded-xl p-md space-y-sm">
@@ -317,17 +534,41 @@ export default function WordBankPage() {
                         </div>
                       </div>
                     ))}
+
+                    {/* Approve/reject section in edit tab too for pending words */}
+                    {isPending && (
+                      <div className="border-t border-divider pt-md">
+                        <p className="font-baloo text-xs text-text-muted mb-sm">Save changes then approve, or approve as-is:</p>
+                        <div className="flex gap-sm">
+                          <button
+                            onClick={saveEdit}
+                            disabled={saving}
+                            className="flex-1 py-sm rounded-xl bg-primary text-white font-baloo font-bold text-sm hover:bg-primary/90 disabled:opacity-50"
+                          >
+                            {saving ? 'Saving…' : 'Save Changes'}
+                          </button>
+                          <button
+                            onClick={() => handleApprove(editWord!.id)}
+                            disabled={saving}
+                            className="flex-1 py-sm rounded-xl bg-success text-white font-baloo font-bold text-sm hover:bg-success/90 disabled:opacity-50"
+                          >
+                            ✓ Approve
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {editTab === 'media' && (
+                {/* ── Media tab ── */}
+                {modalTab === 'media' && (
                   <div className="space-y-md">
                     <div>
                       <label className="font-baloo font-bold text-sm text-text-dark block mb-sm">Word Image</label>
                       {editForm.imageUrl ? (
-                        <img src={editForm.imageUrl} alt="" className="w-32 h-32 object-cover rounded-xl border border-divider mb-sm" />
+                        <img src={editForm.imageUrl} alt="" className="w-48 h-48 object-cover rounded-2xl border border-divider mb-sm shadow-sm" />
                       ) : (
-                        <div className="w-32 h-32 rounded-xl bg-lavender-light flex items-center justify-center text-4xl border-2 border-dashed border-divider mb-sm">📝</div>
+                        <div className="w-48 h-48 rounded-2xl bg-lavender-light flex items-center justify-center text-5xl border-2 border-dashed border-divider mb-sm">📝</div>
                       )}
                       <label className="cursor-pointer px-md py-sm bg-lavender-light text-primary font-baloo font-semibold text-sm rounded-xl hover:bg-primary hover:text-white transition-colors inline-block">
                         {saving ? 'Uploading…' : 'Upload Image'}
@@ -337,7 +578,8 @@ export default function WordBankPage() {
                   </div>
                 )}
 
-                {editTab === 'settings' && (
+                {/* ── Settings tab ── */}
+                {modalTab === 'settings' && (
                   <div className="space-y-md">
                     <div>
                       <label className="font-baloo font-bold text-sm text-text-dark block mb-sm">Word Type</label>
@@ -373,67 +615,23 @@ export default function WordBankPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Approve/Reject section for pending */}
-                {editWord.status === 'pending' && (
-                  <div className="border-t border-divider pt-md">
-                    <h3 className="font-baloo font-bold text-sm text-text-dark mb-sm">Review</h3>
-                    {showRejectInput ? (
-                      <div className="space-y-sm">
-                        <textarea
-                          value={rejectNote}
-                          onChange={e => setRejectNote(e.target.value)}
-                          placeholder="Rejection reason…"
-                          rows={3}
-                          className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-1 focus:ring-error"
-                        />
-                        <div className="flex gap-sm">
-                          <button onClick={() => setShowRejectInput(false)} className="flex-1 py-sm rounded-xl border-2 border-divider font-baloo font-semibold text-sm text-text-muted">
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleReject(editWord.id)}
-                            disabled={!rejectNote.trim() || saving}
-                            className="flex-1 py-sm rounded-xl bg-error text-white font-baloo font-bold text-sm disabled:opacity-50"
-                          >
-                            Reject Word
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex gap-sm">
-                        <button
-                          onClick={() => handleApprove(editWord.id)}
-                          disabled={saving}
-                          className="flex-1 py-sm rounded-xl bg-success text-white font-baloo font-bold text-sm hover:bg-success/90 transition-colors shadow-sm"
-                        >
-                          ✓ Approve Word
-                        </button>
-                        <button
-                          onClick={() => setShowRejectInput(true)}
-                          className="flex-1 py-sm rounded-xl border-2 border-error text-error font-baloo font-bold text-sm hover:bg-error hover:text-white transition-colors"
-                        >
-                          ✕ Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
-              {/* Modal footer */}
-              <div className="px-lg py-md border-t border-divider flex items-center justify-between">
-                <button onClick={() => setEditWord(null)} className="font-baloo font-semibold text-sm text-text-muted hover:text-text-dark">
-                  Cancel
-                </button>
-                <button
-                  onClick={saveEdit}
-                  disabled={saving}
-                  className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50"
-                >
-                  {saving ? 'Saving…' : 'Save Changes'}
-                </button>
-              </div>
+              {/* Modal footer — only show Save for non-review, non-pending-content tabs */}
+              {modalTab !== 'review' && !(modalTab === 'content' && isPending) && (
+                <div className="px-lg py-md border-t border-divider flex items-center justify-between">
+                  <button onClick={() => setEditWord(null)} className="font-baloo font-semibold text-sm text-text-muted hover:text-text-dark">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    disabled={saving}
+                    className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50"
+                  >
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
+              )}
             </motion.div>
           </>
         )}

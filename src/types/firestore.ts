@@ -28,6 +28,12 @@ export interface StudentDoc {
     quizAccuracy?: number;
     drawingAccuracy?: number;
     levelProgress?: Record<string, { completed: boolean; wordsDone: number; totalWords: number; completedAt?: Timestamp }>;
+    // Gamification
+    xp?: number;
+    weeklyXP?: number;
+    playerLevel?: number;
+    badges?: string[];
+    lastBadgeEarned?: string;
   };
   expoPushToken?: string;
   createdAt: Timestamp;
@@ -146,14 +152,22 @@ export interface WordBankDoc {
   pronunciation: Record<LanguageCode, string>;
   meaning: Record<LanguageCode, string>;
   sentence: Record<LanguageCode, string>;
-  imageUrl: string | null;
+  imageUrl: string | null;          // primary image = imageUrls[0] (backward compat)
   imageStoragePath?: string | null;
+  imageUrls?: string[];             // up to 3 image URLs
+  imageStoragePaths?: string[];     // matching storage paths for multi-image
   audioUrl: AudioUrlMap;
   submittedBy?: string;
+  submittedByName?: string;
+  submittedBySchoolId?: string;
+  submittedBySchoolName?: string;
+  submittedByProjectId?: string;
+  gradeContext?: number;
   submittedAt?: Timestamp;
   reviewedBy?: string;
   reviewedAt?: Timestamp;
   rejectionNote?: string;
+  projectId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

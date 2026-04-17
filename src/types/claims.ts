@@ -1,6 +1,6 @@
 // Custom claims types for role-based access control
 
-export type UserRole = 'admin' | 'projectAdmin' | 'pm' | 'principal' | 'teacher';
+export type UserRole = 'admin' | 'projectAdmin' | 'pm' | 'principal' | 'teacher' | 'contentWriter' | 'contentReviewer';
 
 export interface CustomClaims {
   role: UserRole;

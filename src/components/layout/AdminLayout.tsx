@@ -25,6 +25,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { path: '/admin/curricula', label: 'Language Curricula', icon: '🌐' },
         { path: '/admin/reviews', label: 'Reviews', icon: '✅', badge: pendingEditsCount },
         { path: '/admin/license-keys', label: 'License Keys', icon: '🔑' },
+        { path: '/admin/brand-profiles', label: 'Brand Profiles', icon: '🎨' },
+        { path: '/admin/discounts', label: 'Discounts', icon: '🏷️' },
+        { path: '/admin/analytics-visibility', label: 'Analytics Controls', icon: '🎛️' },
       ] : []),
       ...(isProjectAdmin ? [
         { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },

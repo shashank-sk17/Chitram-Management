@@ -20,6 +20,12 @@ import TeacherStudentAnalyticsPage from '../pages/teacher/StudentAnalyticsPage';
 import TeacherClassDetailPage from '../pages/teacher/ClassDetailPage';
 import TeacherCurriculumEditorPage from '../pages/teacher/CurriculumEditorPage';
 import TeacherAnnouncementsPage from '../pages/teacher/AnnouncementsPage';
+import TeacherNotificationsPage from '../pages/teacher/NotificationsPage';
+import { ContentWriterLayout } from '../components/layout/ContentWriterLayout';
+import { ContentReviewerLayout } from '../components/layout/ContentReviewerLayout';
+import ContentWriterWordEditorPage from '../pages/writer/WordEditorPage';
+import CsvImportPage from '../pages/writer/CsvImportPage';
+import WordReviewPage from '../pages/reviewer/WordReviewPage';
 import AdminDashboardPage from '../pages/admin/DashboardPage';
 import AdminProjectsPage from '../pages/admin/ProjectsPage';
 import AdminProjectDetailPage from '../pages/admin/ProjectDetailPage';
@@ -31,6 +37,9 @@ import AdminWordBankPage from '../pages/admin/WordBankPage';
 import AdminLanguageCurriculaPage from '../pages/admin/LanguageCurriculaPage';
 import AdminCurriculumReviewsPage from '../pages/admin/CurriculumReviewsPage';
 import AdminLicenseKeysPage from '../pages/admin/LicenseKeysPage';
+import AdminBrandProfilesPage from '../pages/admin/BrandProfilesPage';
+import AdminDiscountPage from '../pages/admin/DiscountPage';
+import AdminAnalyticsVisibilityPage from '../pages/admin/AnalyticsVisibilityPage';
 import PMDashboardPage from '../pages/pm/DashboardPage';
 import PMAnalyticsPage from '../pages/pm/AnalyticsPage';
 import PrincipalDashboardPage from '../pages/principal/DashboardPage';
@@ -94,6 +103,7 @@ export function AppRoutes() {
                   <Route path="student-analytics" element={<TeacherStudentAnalyticsPage />} />
                   <Route path="curriculum-editor" element={<TeacherCurriculumEditorPage />} />
                   <Route path="announcements" element={<TeacherAnnouncementsPage />} />
+                  <Route path="notifications" element={<TeacherNotificationsPage />} />
                   {/* Legacy redirects */}
                   <Route path="students" element={<Navigate to="/teacher/student-analytics" replace />} />
                   <Route path="analytics" element={<Navigate to="/teacher/student-analytics" replace />} />
@@ -125,6 +135,9 @@ export function AppRoutes() {
                   <Route path="curricula" element={<AdminLanguageCurriculaPage />} />
                   <Route path="reviews" element={<AdminCurriculumReviewsPage />} />
                   <Route path="license-keys" element={<AdminLicenseKeysPage />} />
+                  <Route path="brand-profiles" element={<AdminBrandProfilesPage />} />
+                  <Route path="discounts" element={<AdminDiscountPage />} />
+                  <Route path="analytics-visibility" element={<AdminAnalyticsVisibilityPage />} />
                 </Routes>
               </AdminLayout>
             </RoleGuard>
@@ -166,8 +179,45 @@ export function AppRoutes() {
         }
       />
 
+      {/* Content Writer Routes */}
+      <Route
+        path="/writer/*"
+        element={
+          <ProtectedRoute>
+            <RoleGuard allowedRoles={['contentWriter', 'admin']}>
+              <ContentWriterLayout>
+                <Routes>
+                  <Route index element={<ContentWriterWordEditorPage />} />
+                  <Route path="import" element={<CsvImportPage />} />
+                </Routes>
+              </ContentWriterLayout>
+            </RoleGuard>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Content Reviewer Routes */}
+      <Route
+        path="/reviewer/*"
+        element={
+          <ProtectedRoute>
+            <RoleGuard allowedRoles={['contentReviewer', 'admin']}>
+              <ContentReviewerLayout>
+                <Routes>
+                  <Route index element={<WordReviewPage />} />
+                </Routes>
+              </ContentReviewerLayout>
+            </RoleGuard>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Default redirect based on role */}
-      <Route path="*" element={<Navigate to={`/${claims.role}`} replace />} />
+      <Route path="*" element={<Navigate to={
+        claims.role === 'contentWriter' ? '/writer' :
+        claims.role === 'contentReviewer' ? '/reviewer' :
+        `/${claims.role}`
+      } replace />} />
     </Routes>
   );
 }

@@ -3,11 +3,15 @@ import { motion } from 'framer-motion';
 import { Card } from '../../components/common/Card';
 import { StatCardSkeleton, RowSkeleton } from '../../components/common/Skeleton';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { useAuthStore } from '../../stores/authStore';
 import {
   getSchoolsInProject,
   getClassesBySchool,
+  getStudentsByClass,
 } from '../../services/firebase/firestore';
 import type { SchoolDoc, ClassDoc } from '../../types/firestore';
+import { GamificationPanel, type GamificationStudent } from '../../components/common/GamificationPanel';
+import { useAnalyticsVisibility } from '../../hooks/useAnalyticsVisibility';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +41,8 @@ interface GradeBar {
 export default function PMAnalyticsPage() {
   const { claims } = useAuth();
   const projectId: string | undefined = claims?.projectId;
+  const { user: authUser } = useAuthStore();
+  const { sections } = useAnalyticsVisibility({ role: 'pm', projectId, uid: authUser?.uid });
 
   // Phase 1: schools + stat cards
   const [loadingPhase1, setLoadingPhase1] = useState(true);
@@ -50,6 +56,12 @@ export default function PMAnalyticsPage() {
   const [schoolRows, setSchoolRows] = useState<SchoolRow[]>([]);
   const [gradeBars, setGradeBars] = useState<GradeBar[]>([]);
   const [maxGradeCount, setMaxGradeCount] = useState(1);
+
+  // Phase 3: gamification
+  const [loadingGamif, setLoadingGamif] = useState(true);
+  const [gamifStudents, setGamifStudents] = useState<GamificationStudent[]>([]);
+  const [schoolOptions, setSchoolOptions] = useState<{ id: string; name: string }[]>([]);
+  const [classOptions,  setClassOptions]  = useState<{ id: string; name: string }[]>([]);
 
   // ── Phase 1 ──────────────────────────────────────────────────────────────
 
@@ -205,6 +217,55 @@ export default function PMAnalyticsPage() {
     loadPhase2();
   }, [loadingPhase1, schools]);
 
+  // ── Phase 3: Gamification ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (loadingPhase2 || schools.length === 0) {
+      if (!loadingPhase2) setLoadingGamif(false);
+      return;
+    }
+
+    async function loadGamification() {
+      try {
+        setSchoolOptions(schools.map(s => ({ id: s.id, name: s.name })));
+
+        const schoolClassResults = await Promise.all(
+          schools.map(s => getClassesBySchool(s.id).then(cls => ({ sid: s.id, cls: cls as Array<ClassDoc & { id: string }> })))
+        );
+        const allClasses = schoolClassResults.flatMap(({ sid, cls }) => cls.map(c => ({ ...c, schoolId: sid })));
+        setClassOptions(allClasses.map(c => ({ id: c.id, name: c.name })));
+
+        const uniqueMap = new Map<string, GamificationStudent>();
+        await Promise.all(allClasses.map(async cls => {
+          const students = await getStudentsByClass(cls.id);
+          students.forEach(s => {
+            if (!uniqueMap.has(s.id)) {
+              uniqueMap.set(s.id, {
+                id: s.id,
+                name: s.name,
+                avatarColor: s.avatarColor ?? '#7C81FF',
+                xp: (s.analytics as any)?.xp ?? 0,
+                weeklyXP: (s.analytics as any)?.weeklyXP ?? 0,
+                playerLevel: (s.analytics as any)?.playerLevel ?? 1,
+                badges: (s.analytics as any)?.badges ?? [],
+                streakDays: s.analytics?.streakDays ?? 0,
+                learnedWords: s.analytics?.totalWordsLearned ?? 0,
+                schoolId: cls.schoolId,
+                classId: cls.id,
+              });
+            }
+          });
+        }));
+        setGamifStudents(Array.from(uniqueMap.values()));
+      } catch (err) {
+        console.error('PM gamification load error:', err);
+      } finally {
+        setLoadingGamif(false);
+      }
+    }
+
+    loadGamification();
+  }, [loadingPhase2]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -225,7 +286,7 @@ export default function PMAnalyticsPage() {
       </motion.div>
 
       {/* Stat Cards — Phase 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-sm sm:gap-md mb-lg sm:mb-xl">
+      {sections.overviewStats && <div className="grid grid-cols-2 lg:grid-cols-4 gap-sm sm:gap-md mb-lg sm:mb-xl">
         {loadingPhase1
           ? Array.from({ length: 4 }).map((_, i) => (
               <StatCardSkeleton key={i} />
@@ -262,7 +323,7 @@ export default function PMAnalyticsPage() {
                 </Card>
               </motion.div>
             ))}
-      </div>
+      </div>}
 
       {phase1Error && (
         <div className="mb-lg p-md rounded-lg bg-red-50 border border-red-200">
@@ -273,7 +334,7 @@ export default function PMAnalyticsPage() {
       {/* School Comparison Table + Grade Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-md sm:gap-lg mb-lg sm:mb-xl">
         {/* School Comparison */}
-        <motion.div
+        {sections.engagementMetrics && <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, delay: 0.4 }}
@@ -344,10 +405,10 @@ export default function PMAnalyticsPage() {
               </div>
             )}
           </Card>
-        </motion.div>
+        </motion.div>}
 
         {/* Grade Distribution */}
-        <motion.div
+        {sections.gradeDistribution && <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, delay: 0.5 }}
@@ -400,25 +461,24 @@ export default function PMAnalyticsPage() {
               </div>
             )}
           </Card>
-        </motion.div>
+        </motion.div>}
       </div>
 
-      {/* Export Note */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.6 }}
-        className="mb-xl"
-      >
-        <div className="flex justify-end">
-          <button
-            disabled
-            className="font-baloo text-sm text-text-muted bg-gray-100 border border-divider rounded-lg px-lg py-sm cursor-not-allowed"
-          >
-            CSV export coming soon
-          </button>
-        </div>
-      </motion.div>
+      {/* Gamification Section */}
+      {!loadingPhase1 && sections.gamification && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.6 }}
+          className="mt-xl"
+        >
+          <div className="mb-lg">
+            <h2 className="font-baloo font-bold text-xl text-text-dark">Gamification 🏆</h2>
+            <p className="font-baloo text-sm text-text-muted">Project-wide XP leaderboard, badges and player levels</p>
+          </div>
+          <GamificationPanel students={gamifStudents} loading={loadingGamif} schools={schoolOptions} classes={classOptions} />
+        </motion.div>
+      )}
     </div>
   );
 }

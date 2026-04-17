@@ -175,12 +175,16 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             <option value="projectAdmin">Project Admin</option>
             <option value="pm">Project Manager</option>
             <option value="principal">Principal</option>
+            <option value="contentWriter">Content Writer</option>
+            <option value="contentReviewer">Content Reviewer</option>
           </select>
           <p className="font-baloo text-xs text-text-muted mt-xs">
             {role === 'admin' && 'Full access to all projects, schools, and platform settings'}
             {role === 'projectAdmin' && 'Manage schools, teachers, and curriculum within their project'}
             {role === 'pm' && 'Read-only analytics and reporting for their project'}
             {role === 'principal' && 'Read-only access to assigned school(s) analytics'}
+            {role === 'contentWriter' && 'Submit words and bulk CSV imports to the review queue'}
+            {role === 'contentReviewer' && 'Approve or reject pending word submissions from content writers'}
           </p>
         </div>
 

@@ -2,17 +2,26 @@ import { useState } from 'react';
 import StudentsPage from './StudentsPage';
 import PracticeTrackingPage from './PracticeTrackingPage';
 import AnalyticsPage from './AnalyticsPage';
+import TeacherGamificationPage from './TeacherGamificationPage';
+import { useAnalyticsVisibility } from '../../hooks/useAnalyticsVisibility';
+import { useAuthStore } from '../../stores/authStore';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 
-type Tab = 'students' | 'practice' | 'analytics';
+type Tab = 'students' | 'practice' | 'analytics' | 'gamification';
 
-const TABS: { id: Tab; label: string; icon: string; desc: string }[] = [
-  { id: 'students',  label: 'Students',  icon: '👨‍🎓', desc: 'Profiles & progress' },
-  { id: 'practice',  label: 'Practice',  icon: '📅',  desc: 'Daily activity & accuracy' },
-  { id: 'analytics', label: 'Analytics', icon: '📈',  desc: 'Performance overview' },
+const ALL_TABS: { id: Tab; label: string; icon: string; desc: string; section: string }[] = [
+  { id: 'students',      label: 'Students',      icon: '👨‍🎓', desc: 'Profiles & progress',      section: 'studentTable' },
+  { id: 'practice',      label: 'Practice',      icon: '📅',  desc: 'Daily activity & accuracy', section: 'assignmentMetrics' },
+  { id: 'analytics',     label: 'Analytics',     icon: '📈',  desc: 'Performance overview',      section: 'studentTable' },
+  { id: 'gamification',  label: 'Gamification',  icon: '🏆',  desc: 'XP, levels & badges',       section: 'gamification' },
 ];
 
 export default function StudentAnalyticsPage() {
   const [tab, setTab] = useState<Tab>('students');
+  const { user: authUser } = useAuthStore();
+  const { claims } = useAuth();
+  const { sections } = useAnalyticsVisibility({ role: 'teacher', projectId: claims?.projectId, uid: authUser?.uid });
+  const TABS = ALL_TABS.filter(t => sections[t.section as keyof typeof sections] !== false);
 
   return (
     <div className="space-y-lg">
@@ -47,9 +56,10 @@ export default function StudentAnalyticsPage() {
 
       {/* Tab content — each page manages its own data */}
       <div>
-        {tab === 'students'  && <StudentsPage />}
-        {tab === 'practice'  && <PracticeTrackingPage />}
-        {tab === 'analytics' && <AnalyticsPage />}
+        {tab === 'students'     && <StudentsPage />}
+        {tab === 'practice'     && <PracticeTrackingPage />}
+        {tab === 'analytics'    && <AnalyticsPage />}
+        {tab === 'gamification' && <TeacherGamificationPage />}
       </div>
     </div>
   );
