@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, Timestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
+import { usePermission } from '../../hooks/usePermission';
 
 interface DiscountDoc {
   code: string;
@@ -43,6 +44,7 @@ const EMPTY_FORM = () => ({
 
 export default function DiscountPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const [discounts, setDiscounts] = useState<DiscountWithId[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -106,12 +108,14 @@ export default function DiscountPage() {
           <h1 className="font-baloo font-extrabold text-xxl text-text-dark">Discount Codes</h1>
           <p className="font-baloo text-text-muted">Manage promo codes and plan discounts</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-lg py-sm rounded-xl bg-primary text-white font-baloo font-bold text-sm hover:bg-primary/90 transition-colors shadow-sm"
-        >
-          + New Code
-        </button>
+        {can('discounts.create') && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-lg py-sm rounded-xl bg-primary text-white font-baloo font-bold text-sm hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            + New Code
+          </button>
+        )}
       </div>
 
       {/* Create form */}
@@ -270,16 +274,24 @@ export default function DiscountPage() {
                   <td className="px-md py-sm font-baloo text-sm text-text-muted">{formatExpiry(d.expiresAt)}</td>
                   <td className="px-md py-sm font-baloo text-xs text-text-muted max-w-[120px] truncate">{d.note || '—'}</td>
                   <td className="px-md py-sm">
-                    <button
-                      onClick={() => toggleActive(d)}
-                      className={`px-sm py-0.5 rounded-full font-baloo font-semibold text-xs transition-colors ${
-                        d.active
-                          ? 'bg-success/10 text-success hover:bg-success/20'
-                          : 'bg-gray-100 text-text-muted hover:bg-gray-200'
-                      }`}
-                    >
-                      {d.active ? 'Active' : 'Inactive'}
-                    </button>
+                    {can('discounts.toggle') ? (
+                      <button
+                        onClick={() => toggleActive(d)}
+                        className={`px-sm py-0.5 rounded-full font-baloo font-semibold text-xs transition-colors ${
+                          d.active
+                            ? 'bg-success/10 text-success hover:bg-success/20'
+                            : 'bg-gray-100 text-text-muted hover:bg-gray-200'
+                        }`}
+                      >
+                        {d.active ? 'Active' : 'Inactive'}
+                      </button>
+                    ) : (
+                      <span className={`px-sm py-0.5 rounded-full font-baloo font-semibold text-xs ${
+                        d.active ? 'bg-success/10 text-success' : 'bg-gray-100 text-text-muted'
+                      }`}>
+                        {d.active ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

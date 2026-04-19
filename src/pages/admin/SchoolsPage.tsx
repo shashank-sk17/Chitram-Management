@@ -7,11 +7,13 @@ import { Card } from '../../components/common/Card';
 import { CreateSchoolModal } from '../../components/admin/CreateSchoolModal';
 import { getAllSchools, getAllProjects, getSchoolsInProject } from '../../services/firebase/firestore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { usePermission } from '../../hooks/usePermission';
 import type { SchoolDoc, ProjectDoc } from '../../types/firestore';
 
 export default function SchoolsPage() {
   const navigate = useNavigate();
   const { claims } = useAuth();
+  const { can } = usePermission();
   const { setSchools } = useProjectStore();
   const [schools, setSchoolsLocal] = useState<Array<SchoolDoc & { id: string }>>([]);
   const [projects, setProjects] = useState<Array<ProjectDoc & { id: string }>>([]);
@@ -81,13 +83,15 @@ export default function SchoolsPage() {
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
             Schools
           </h1>
-          <Button
-            title="Add School"
-            onPress={() => setShowCreateSchool(true)}
-            variant="primary"
-            size="sm"
-            icon={<span>➕</span>}
-          />
+          {can('schools.create') && (
+            <Button
+              title="Add School"
+              onPress={() => setShowCreateSchool(true)}
+              variant="primary"
+              size="sm"
+              icon={<span>➕</span>}
+            />
+          )}
         </div>
         <p className="font-baloo text-sm sm:text-lg text-text-muted">
           {isProjectAdmin ? 'Schools in your project' : 'Manage all schools across projects'}

@@ -8,6 +8,7 @@ import { Card } from '../../components/common/Card';
 import { CreateClassModal } from '../../components/teacher/CreateClassModal';
 import { useNavigate } from 'react-router-dom';
 import type { TeacherDoc } from '../../types/firestore';
+import { usePermission } from '../../hooks/usePermission';
 
 function CopyCodeButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -35,6 +36,7 @@ function CopyCodeButton({ code }: { code: string }) {
 export default function TeacherClassesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { can } = usePermission();
   const {
     classes,
     listenToTeacherClasses,
@@ -125,14 +127,16 @@ export default function TeacherClassesPage() {
           <h2 className="font-baloo font-bold text-lg sm:text-xl text-text-dark">
             All Classes ({classes.length})
           </h2>
-          <Button
-            title="Create Class"
-            onPress={() => setShowCreateClass(true)}
-            variant="primary"
-            size="sm"
-            icon={<span>🏫</span>}
-            disabled={!schoolId}
-          />
+          {can('classes.create') && (
+            <Button
+              title="Create Class"
+              onPress={() => setShowCreateClass(true)}
+              variant="primary"
+              size="sm"
+              icon={<span>🏫</span>}
+              disabled={!schoolId}
+            />
+          )}
         </div>
 
         {/* Loading State */}

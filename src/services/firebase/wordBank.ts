@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, getDocs, updateDoc, addDoc,
+  collection, doc, getDoc, getDocs, updateDoc, addDoc, setDoc,
   query, where, orderBy, startAfter, limit,
   getCountFromServer, serverTimestamp,
   QueryDocumentSnapshot,
@@ -7,6 +7,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
+import { sendAdminNotification } from './adminNotifications';
 
 const COL = 'wordBank';
 
@@ -77,8 +78,8 @@ export async function updateWord(wordId: string, data: Partial<WordBankDoc>): Pr
   await updateDoc(doc(db, COL, wordId), { ...data, updatedAt: serverTimestamp() });
 }
 
-export async function approveWord(wordId: string, adminUid: string): Promise<void> {
-  // Get current max numericId to assign next one if needed
+export async function approveWord(wordId: string, adminUid: string, adminName?: string): Promise<void> {
+  // 1. Fetch the word doc
   const snap = await getDoc(doc(db, COL, wordId));
   if (!snap.exists()) throw new Error('Word not found');
   const word = snap.data() as WordBankDoc;
@@ -91,7 +92,7 @@ export async function approveWord(wordId: string, adminUid: string): Promise<voi
     updatedAt: serverTimestamp() as any,
   };
 
-  // Assign numericId if missing
+  // 2. Assign numericId if missing
   if (!word.numericId) {
     const countSnap = await getCountFromServer(
       query(collection(db, COL), where('status', '==', 'active'))
@@ -100,9 +101,77 @@ export async function approveWord(wordId: string, adminUid: string): Promise<voi
   }
 
   await updateDoc(doc(db, COL, wordId), updates);
+
+  // 3. Add word to languageCurricula so it shows up in the app
+  // Determine primary language (te preferred; fall back to first language with content)
+  const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+  const primaryLang: LanguageCode = LANGS.find(l => !!word.word?.[l]) ?? 'te';
+  const grade: number = word.gradeContext ?? 1;
+  const curriculumDocId = `${primaryLang}_g${grade}`;
+
+  try {
+    const curriculumRef = doc(db, 'languageCurricula', curriculumDocId);
+    const curriculumSnap = await getDoc(curriculumRef);
+
+    if (curriculumSnap.exists()) {
+      const data = curriculumSnap.data() as { levels: Array<{ levelNum: number; wordIds: string[] }>; version?: number };
+      const levels = data.levels ?? [];
+
+      // Don't add duplicates
+      const alreadyExists = levels.some(lvl => lvl.wordIds.includes(wordId));
+      if (!alreadyExists) {
+        // Append to last level, or create level 1 if empty
+        if (levels.length === 0) {
+          levels.push({ levelNum: 1, wordIds: [wordId] });
+        } else {
+          levels[levels.length - 1].wordIds.push(wordId);
+        }
+        await setDoc(curriculumRef, {
+          ...data,
+          levels,
+          version: (data.version ?? 0) + 1,
+          updatedAt: serverTimestamp(),
+          updatedBy: adminUid,
+        });
+      }
+    } else {
+      // Curriculum doc doesn't exist yet — create it with level 1
+      await setDoc(curriculumRef, {
+        language: primaryLang,
+        grade,
+        active: true,
+        version: 1,
+        levels: [{ levelNum: 1, wordIds: [wordId] }],
+        updatedAt: serverTimestamp(),
+        updatedBy: adminUid,
+      });
+    }
+  } catch (err) {
+    // Don't fail the approval if curriculum update fails — log and continue
+    console.error('Failed to add word to languageCurricula:', err);
+  }
+
+  // 4. Notify admins
+  const wordText = word.word?.te || word.word?.en || wordId;
+  await sendAdminNotification({
+    type: 'word_approved',
+    wordId,
+    wordText,
+    grade,
+    wordType: word.wordType,
+    submittedBy: word.submittedBy,
+    submittedByName: word.submittedByName,
+    reviewedBy: adminUid,
+    reviewedByName: adminName,
+    projectId: word.projectId,
+    curricula: curriculumDocId,
+  });
 }
 
-export async function rejectWord(wordId: string, adminUid: string, note: string): Promise<void> {
+export async function rejectWord(wordId: string, adminUid: string, note: string, adminName?: string): Promise<void> {
+  const snap = await getDoc(doc(db, COL, wordId));
+  const word = snap.exists() ? (snap.data() as WordBankDoc) : null;
+
   await updateDoc(doc(db, COL, wordId), {
     status: 'rejected',
     active: false,
@@ -110,6 +179,39 @@ export async function rejectWord(wordId: string, adminUid: string, note: string)
     reviewedBy: adminUid,
     reviewedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+  });
+
+  // Notify admins
+  const wordText = word?.word?.te || word?.word?.en || wordId;
+  await sendAdminNotification({
+    type: 'word_rejected',
+    wordId,
+    wordText,
+    grade: word?.gradeContext,
+    wordType: word?.wordType,
+    submittedBy: word?.submittedBy,
+    submittedByName: word?.submittedByName,
+    reviewedBy: adminUid,
+    reviewedByName: adminName,
+    rejectionNote: note,
+    projectId: word?.projectId,
+  });
+}
+
+export async function notifyWordSubmitted(
+  wordId: string,
+  wordData: Partial<WordBankDoc>,
+): Promise<void> {
+  const wordText = wordData.word?.te || wordData.word?.en || wordId;
+  await sendAdminNotification({
+    type: 'word_submitted',
+    wordId,
+    wordText,
+    grade: wordData.gradeContext,
+    wordType: wordData.wordType,
+    submittedBy: wordData.submittedBy,
+    submittedByName: wordData.submittedByName,
+    projectId: wordData.projectId,
   });
 }
 

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { useTeacherStore } from '../../stores/teacherStore';
 import { useAssignmentStore } from '../../stores/assignmentStore';
+import { usePermission } from '../../hooks/usePermission';
 import type { McqAssignmentDoc, McqQuestion, ClassDoc } from '../../types/firestore';
 import {
   createMcqAssignment, closeAssignment, publishAssignment,
@@ -256,6 +257,7 @@ function CreateMcqAssignmentModal({ open, onClose, classes, teacherUid, onCreate
 
 export default function AssignmentsPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const { classes, listenToTeacherClasses } = useTeacherStore();
   const { assignments, submissions, loadingAssignments, listenToTeacherAssignments, fetchSubmissionsForAssignment } = useAssignmentStore();
 
@@ -319,7 +321,7 @@ export default function AssignmentsPage() {
           <h1 className="font-baloo font-extrabold text-xxl text-text-dark">Assignments 📝</h1>
           <p className="font-baloo text-body text-text-muted">Manage assignments and view gradebook</p>
         </div>
-        {mainTab === 'assignments' && (
+        {mainTab === 'assignments' && can('assignments.create') && (
           <button
             onClick={() => setShowCreate(true)}
             className="px-lg py-sm bg-primary text-white font-baloo font-bold text-md rounded-xl shadow-md hover:bg-primary/90 transition-colors"
@@ -512,7 +514,7 @@ export default function AssignmentsPage() {
 
                         {/* Actions */}
                         <div className="flex gap-sm">
-                          {a.status === 'active' && (
+                          {a.status === 'active' && can('assignments.close') && (
                             <button
                               onClick={() => handleClose(a.id)}
                               disabled={acting === a.id}
@@ -521,7 +523,7 @@ export default function AssignmentsPage() {
                               {acting === a.id ? '…' : 'Close Assignment'}
                             </button>
                           )}
-                          {a.status === 'draft' && (
+                          {a.status === 'draft' && can('assignments.publish') && (
                             <button
                               onClick={() => handlePublish(a.id)}
                               disabled={acting === a.id}

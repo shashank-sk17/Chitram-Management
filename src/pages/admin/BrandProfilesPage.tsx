@@ -4,6 +4,7 @@ import {
   collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { usePermission } from '../../hooks/usePermission';
 
 interface BrandProfile {
   id: string;
@@ -129,6 +130,7 @@ function BrandPreview({ profile }: { profile: Partial<BrandProfile> }) {
 }
 
 export default function BrandProfilesPage() {
+  const { can } = usePermission();
   const [profiles, setProfiles] = useState<BrandProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editProfile, setEditProfile] = useState<Partial<BrandProfile> | null>(null);
@@ -195,12 +197,14 @@ export default function BrandProfilesPage() {
           <h1 className="font-baloo font-extrabold text-xxl text-text-dark">Brand Profiles 🎨</h1>
           <p className="font-baloo text-text-muted">Configure partner brand takeovers (Disney-style full-app theming)</p>
         </div>
-        <button
-          onClick={openNew}
-          className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-md"
-        >
-          + New Brand Profile
-        </button>
+        {can('brandProfiles.create') && (
+          <button
+            onClick={openNew}
+            className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-md"
+          >
+            + New Brand Profile
+          </button>
+        )}
       </div>
 
       {/* Profile grid */}
@@ -254,12 +258,14 @@ export default function BrandProfilesPage() {
                 <p className="font-mono text-xs text-text-dark break-all select-all">{p.id}</p>
               </div>
 
-              <button
-                onClick={() => openEdit(p)}
-                className="w-full py-sm rounded-xl bg-lavender-light text-primary font-baloo font-bold text-sm hover:bg-primary hover:text-white transition-colors"
-              >
-                Edit Profile
-              </button>
+              {can('brandProfiles.edit') && (
+                <button
+                  onClick={() => openEdit(p)}
+                  className="w-full py-sm rounded-xl bg-lavender-light text-primary font-baloo font-bold text-sm hover:bg-primary hover:text-white transition-colors"
+                >
+                  Edit Profile
+                </button>
+              )}
             </div>
           ))}
         </div>

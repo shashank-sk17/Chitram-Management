@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { useCurriculumStore } from '../../stores/curriculumStore';
+import { usePermission } from '../../hooks/usePermission';
 import type { LanguageCode, CurriculumLevel } from '../../types/firestore';
 import { LevelEditor } from '../../components/curriculum/LevelEditor';
 import { WordPickerModal } from '../../components/curriculum/WordPickerModal';
@@ -12,6 +13,7 @@ const GRADES = [1, 2, 3, 4, 5];
 
 export default function LanguageCurriculaPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const { curricula, words, loadingCurricula, fetchCurriculum, updateCurriculumLocally, fetchWordsByIds } = useCurriculumStore();
 
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('te');
@@ -119,19 +121,23 @@ export default function LanguageCurriculaPage() {
         </div>
         {isCurrentLoaded && (
           <div className="flex items-center gap-sm">
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="px-md py-sm rounded-xl border-2 border-error text-error font-baloo font-bold text-sm hover:bg-rose-50 transition-colors"
-            >
-              Reset to Seed
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!dirty || saving}
-              className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40"
-            >
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
+            {can('curricula.resetToSeed') && (
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="px-md py-sm rounded-xl border-2 border-error text-error font-baloo font-bold text-sm hover:bg-rose-50 transition-colors"
+              >
+                Reset to Seed
+              </button>
+            )}
+            {can('curricula.edit') && (
+              <button
+                onClick={handleSave}
+                disabled={!dirty || saving}
+                className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40"
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            )}
           </div>
         )}
       </div>

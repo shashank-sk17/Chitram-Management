@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
+import { usePermission } from '../../hooks/usePermission';
 import { useTeacherStore } from '../../stores/teacherStore';
 import { useCurriculumStore } from '../../stores/curriculumStore';
-import type { LanguageCode, CurriculumLevel, ClassDoc, WordBankDoc } from '../../types/firestore';
+import type { LanguageCode, CurriculumLevel, ClassDoc, WordBankDoc, SchoolDoc } from '../../types/firestore';
 import { LevelEditor } from '../../components/curriculum/LevelEditor';
 import { WordPickerModal } from '../../components/curriculum/WordPickerModal';
 import { SharedCurriculaDrawer } from '../../components/curriculum/SharedCurriculaDrawer';
@@ -30,7 +33,8 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function CurriculumEditorPage() {
-  const { user } = useAuthStore();
+  const { user, claims } = useAuthStore();
+  const { can } = usePermission();
   const { classes, listenToTeacherClasses } = useTeacherStore();
   const { words, edits, fetchWordsByIds, fetchEditsForClass } = useCurriculumStore();
 
@@ -38,6 +42,12 @@ export default function CurriculumEditorPage() {
   const [localLevels, setLocalLevels] = useState<CurriculumLevel[]>([]);
   const [_masterLevels, setMasterLevels] = useState<CurriculumLevel[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [schoolName, setSchoolName] = useState<string>('');
+  const [schoolProjectId, setSchoolProjectId] = useState<string>('');
+
+  // Tracks wordIds created fresh via createPendingWord — needed for CF to activate them on approve
+  const pendingWordIdsRef = useRef<Set<string>>(new Set());
+  const [unsubmittedPendingCount, setUnsubmittedPendingCount] = useState(0);
 
   // Word picker
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -68,6 +78,21 @@ export default function CurriculumEditorPage() {
     if (!selectedClass) return;
     const lang = selectedClass.learningLanguage;
     const grade = parseGrade(selectedClass.grade);
+
+    // Reset pending word tracking when class changes
+    pendingWordIdsRef.current = new Set();
+    setUnsubmittedPendingCount(0);
+
+    // Fetch school name + projectId for teacher metadata
+    if (selectedClass.schoolId) {
+      getDoc(doc(db, 'schools', selectedClass.schoolId)).then(snap => {
+        if (snap.exists()) {
+          const school = snap.data() as SchoolDoc;
+          setSchoolName(school.name);
+          setSchoolProjectId(school.projectId || '');
+        }
+      }).catch(() => {});
+    }
 
     fetchEditsForClass(selectedClassId);
 
@@ -158,6 +183,11 @@ export default function CurriculumEditorPage() {
     setDirty(true);
   };
 
+  const handleWordCreated = (wordId: string) => {
+    pendingWordIdsRef.current.add(wordId);
+    setUnsubmittedPendingCount(pendingWordIdsRef.current.size);
+  };
+
   const handleSubmit = async () => {
     if (!user || !selectedClass) return;
     setSubmitting(true);
@@ -170,8 +200,10 @@ export default function CurriculumEditorPage() {
         language: selectedClass.learningLanguage,
         shareWithProject,
         proposedLevels: localLevels,
-        pendingWordIds: [],
+        pendingWordIds: Array.from(pendingWordIdsRef.current),
       });
+      pendingWordIdsRef.current = new Set(); // clear after successful submit
+      setUnsubmittedPendingCount(0);
       await fetchEditsForClass(selectedClassId);
       setShowSubmitModal(false);
       setSubmitNote('');
@@ -199,15 +231,34 @@ export default function CurriculumEditorPage() {
           >
             Browse Shared Curricula
           </button>
-          <button
-            onClick={() => setShowSubmitModal(true)}
-            disabled={!dirty || !selectedClassId}
-            className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40"
-          >
-            Submit for Approval
-          </button>
+          {can('curriculumEditor.edit') && (
+            <button
+              onClick={() => setShowSubmitModal(true)}
+              disabled={!dirty || !selectedClassId}
+              className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40"
+            >
+              Submit for Approval
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Pending word reminder banner */}
+      {unsubmittedPendingCount > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-md py-sm flex items-center gap-sm">
+          <span className="text-lg">⚠️</span>
+          <p className="font-baloo text-sm text-amber-700 flex-1">
+            You've created <strong>{unsubmittedPendingCount} new word{unsubmittedPendingCount !== 1 ? 's' : ''}</strong> pending admin approval.
+            Click <strong>Submit for Approval</strong> to send your curriculum for review — otherwise the words will be saved but won't appear in admin reviews.
+          </p>
+          <button
+            onClick={() => setShowSubmitModal(true)}
+            className="shrink-0 px-md py-xs bg-amber-600 text-white font-baloo font-bold text-sm rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            Submit Now
+          </button>
+        </div>
+      )}
 
       {/* Class selector */}
       <div className="bg-white rounded-2xl border border-divider shadow-sm p-md flex items-end gap-md flex-wrap">
@@ -329,12 +380,21 @@ export default function CurriculumEditorPage() {
         currentLevelIds={currentLevelIds}
         otherLevelMap={buildOtherLevelMap(pickerLevelNum)}
         onConfirm={handlePickerConfirm}
+        onWordCreated={handleWordCreated}
         editMode={editWordId && mergedWords[editWordId]
           ? { wordId: editWordId, wordData: mergedWords[editWordId] }
           : undefined
         }
         onEditConfirm={handleEditConfirm}
         teacherUid={user?.uid ?? ''}
+        teacherMeta={{
+          teacherName: user?.displayName || user?.email || undefined,
+          schoolId: selectedClass?.schoolId || claims?.schoolId,
+          schoolName: schoolName || undefined,
+          projectId: schoolProjectId || undefined,
+          gradeContext: selectedClass ? parseGrade(selectedClass.grade) : undefined,
+        }}
+        browseProjectId={schoolProjectId || undefined}
       />
 
       {/* Shared Curricula Drawer */}

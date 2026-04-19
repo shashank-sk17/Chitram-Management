@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
+import { usePermission } from '../../hooks/usePermission';
 import type { LicenseKeyDoc, LanguageCode } from '../../types/firestore';
 import {
   getLicenseKeys, createLicenseKey, createLicenseKeysBulk, revokeLicenseKey, exportLicenseKeysCSV,
@@ -27,6 +28,7 @@ function formatDate(ts: Timestamp | string | undefined): string {
 
 export default function LicenseKeysPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const [keys, setKeys] = useState<KeyWithId[]>([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<LicenseKeyFilters>({});
@@ -103,12 +105,14 @@ export default function LicenseKeysPage() {
           >
             Export CSV
           </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors"
-          >
-            + Create Key(s)
-          </button>
+          {can('licenseKeys.generate') && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors"
+            >
+              + Create Key(s)
+            </button>
+          )}
         </div>
       </div>
 
@@ -218,7 +222,7 @@ export default function LicenseKeysPage() {
                     <td className="px-md py-sm font-baloo text-sm text-text-muted">{formatDate(k.expiresAt)}</td>
                     <td className="px-md py-sm font-baloo text-sm text-text-muted truncate max-w-[120px]">{k.usedBy || '—'}</td>
                     <td className="px-md py-sm">
-                      {k.status !== 'expired' && (
+                      {k.status !== 'expired' && can('licenseKeys.revoke') && (
                         <button
                           onClick={() => handleRevoke(k.id)}
                           disabled={revoking === k.id}

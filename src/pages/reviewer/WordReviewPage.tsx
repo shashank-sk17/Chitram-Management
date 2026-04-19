@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
+import { usePermission } from '../../hooks/usePermission';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
 import {
   getWordBankPage,
@@ -154,6 +155,7 @@ function WordListItem({
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function WordReviewPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const { refreshBadgeCounts } = useCurriculumStore();
 
   const [words, setWords] = useState<WordWithId[]>([]);
@@ -192,7 +194,7 @@ export default function WordReviewPage() {
     if (!selected || !user) return;
     setSaving(true);
     try {
-      await approveWord(selected.id, user.uid);
+      await approveWord(selected.id, user.uid, user.email ?? undefined);
       setWords(prev => prev.filter(w => w.id !== selected.id));
       setSelected(null);
       setActionDone('approved');
@@ -207,7 +209,7 @@ export default function WordReviewPage() {
     if (!selected || !user || !rejectNote.trim()) return;
     setSaving(true);
     try {
-      await rejectWord(selected.id, user.uid, rejectNote);
+      await rejectWord(selected.id, user.uid, rejectNote, user.email ?? undefined);
       setWords(prev => prev.filter(w => w.id !== selected.id));
       setSelected(null);
       setActionDone('rejected');
@@ -307,16 +309,18 @@ export default function WordReviewPage() {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => setEditMode(v => !v)}
-                className={`font-baloo text-sm font-semibold px-md py-sm rounded-xl border transition-colors ${
-                  editMode
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-text-dark border-divider hover:border-primary/40'
-                }`}
-              >
-                {editMode ? '✓ Editing' : '✏️ Edit'}
-              </button>
+              {can('wordReview.edit') && (
+                <button
+                  onClick={() => setEditMode(v => !v)}
+                  className={`font-baloo text-sm font-semibold px-md py-sm rounded-xl border transition-colors ${
+                    editMode
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-white text-text-dark border-divider hover:border-primary/40'
+                  }`}
+                >
+                  {editMode ? '✓ Editing' : '✏️ Edit'}
+                </button>
+              )}
             </div>
 
             {/* Images */}
@@ -393,24 +397,28 @@ export default function WordReviewPage() {
               <h3 className="font-baloo font-bold text-sm text-text-dark">Review Decision</h3>
 
               {/* Approve */}
-              <button
-                onClick={handleApprove}
-                disabled={saving}
-                className="w-full py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors disabled:opacity-50"
-              >
-                {saving ? 'Processing…' : '✅ Approve — Publish to Curriculum'}
-              </button>
+              {can('wordReview.approve') && (
+                <button
+                  onClick={handleApprove}
+                  disabled={saving}
+                  className="w-full py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors disabled:opacity-50"
+                >
+                  {saving ? 'Processing…' : '✅ Approve — Publish to Curriculum'}
+                </button>
+              )}
 
               {/* Reject */}
               <div className="space-y-sm">
                 {!showRejectInput ? (
-                  <button
-                    onClick={() => setShowRejectInput(true)}
-                    disabled={saving}
-                    className="w-full py-md rounded-xl border-2 border-error/30 text-error font-baloo font-bold text-base hover:bg-error/5 transition-colors disabled:opacity-50"
-                  >
-                    ✗ Reject
-                  </button>
+                  can('wordReview.reject') && (
+                    <button
+                      onClick={() => setShowRejectInput(true)}
+                      disabled={saving}
+                      className="w-full py-md rounded-xl border-2 border-error/30 text-error font-baloo font-bold text-base hover:bg-error/5 transition-colors disabled:opacity-50"
+                    >
+                      ✗ Reject
+                    </button>
+                  )
                 ) : (
                   <AnimatePresence>
                     <motion.div

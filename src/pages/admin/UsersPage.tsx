@@ -7,6 +7,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getSchoolsInProject } from '../../services/firebase/firestore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { usePermission } from '../../hooks/usePermission';
 
 interface User {
   id: string;
@@ -20,6 +21,7 @@ interface User {
 
 export default function UsersPage() {
   const { claims } = useAuth();
+  const { can } = usePermission();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInviteUser, setShowInviteUser] = useState(false);
@@ -139,14 +141,16 @@ export default function UsersPage() {
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
             Users Management 👥
           </h1>
-          <Button
-            title="Invite User"
-            onPress={() => setShowInviteUser(true)}
-            variant="primary"
-            size="sm"
-            className="w-auto self-start sm:self-auto"
-            icon={<span>➕</span>}
-          />
+          {can('users.invite') && (
+            <Button
+              title="Invite User"
+              onPress={() => setShowInviteUser(true)}
+              variant="primary"
+              size="sm"
+              className="w-auto self-start sm:self-auto"
+              icon={<span>➕</span>}
+            />
+          )}
         </div>
         <p className="font-baloo text-sm sm:text-lg text-text-muted">
           {isProjectAdmin ? 'Users in your project' : 'Manage user accounts and roles'}

@@ -7,11 +7,13 @@ import { Card } from '../../components/common/Card';
 import { CreateProjectModal } from '../../components/admin/CreateProjectModal';
 import { getAllProjects, getAllSchools, getProject, getSchoolsInProject } from '../../services/firebase/firestore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { usePermission } from '../../hooks/usePermission';
 import type { ProjectDoc, SchoolDoc } from '../../types/firestore';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const { claims } = useAuth();
+  const { can } = usePermission();
   const { setProjects } = useProjectStore();
   const [projects, setProjectsLocal] = useState<Array<ProjectDoc & { id: string }>>([]);
   const [schools, setSchools] = useState<Array<SchoolDoc & { id: string }>>([]);
@@ -81,7 +83,7 @@ export default function ProjectsPage() {
           <h1 className="font-baloo font-bold text-xl sm:text-xxl text-text-dark">
             {isProjectAdmin ? 'My Project' : 'Projects'}
           </h1>
-          {!isProjectAdmin && (
+          {can('projects.create') && (
             <Button
               title="Create Project"
               onPress={() => setShowCreateProject(true)}

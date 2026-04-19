@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useAuthStore } from '../../stores/authStore';
+import { AdminNotificationBell } from '../AdminNotificationBell';
 
 export interface NavItem {
   path: string;
@@ -14,6 +15,7 @@ export interface NavItem {
 interface AppLayoutProps {
   children: ReactNode;
   navItems: NavItem[];
+  showNotificationBell?: boolean;
 }
 
 function useIsDesktop() {
@@ -48,7 +50,7 @@ const ROLE_LABELS: Record<string, string> = {
   teacher: 'Teacher',
 };
 
-export function AppLayout({ children, navItems }: AppLayoutProps) {
+export function AppLayout({ children, navItems, showNotificationBell = false }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -343,7 +345,7 @@ export function AppLayout({ children, navItems }: AppLayoutProps) {
           >
             {sidebarOpen ? '◀' : '▶'}
           </button>
-          <nav className="flex items-center gap-xs font-baloo text-sm">
+          <nav className="flex items-center gap-xs font-baloo text-sm flex-1">
             {breadcrumbs.map((crumb, i) => (
               <span key={crumb.path} className="flex items-center gap-xs">
                 {i > 0 && <span className="text-divider select-none">/</span>}
@@ -359,6 +361,7 @@ export function AppLayout({ children, navItems }: AppLayoutProps) {
               </span>
             ))}
           </nav>
+          {showNotificationBell && <AdminNotificationBell />}
         </header>
 
         {/* Page content */}

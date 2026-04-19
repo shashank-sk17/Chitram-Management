@@ -28,6 +28,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { path: '/admin/brand-profiles', label: 'Brand Profiles', icon: '🎨' },
         { path: '/admin/discounts', label: 'Discounts', icon: '🏷️' },
         { path: '/admin/analytics-visibility', label: 'Analytics Controls', icon: '🎛️' },
+        { path: '/admin/feature-permissions', label: 'Feature Permissions', icon: '🔐' },
       ] : []),
       ...(isProjectAdmin ? [
         { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },
@@ -40,5 +41,5 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     ];
   }, [claims, pendingWordsCount, pendingEditsCount]);
 
-  return <AppLayout navItems={navItems}>{children}</AppLayout>;
+  return <AppLayout navItems={navItems} showNotificationBell>{children}</AppLayout>;
 }

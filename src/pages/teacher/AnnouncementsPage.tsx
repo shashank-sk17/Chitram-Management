@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { useTeacherStore } from '../../stores/teacherStore';
+import { usePermission } from '../../hooks/usePermission';
 import type { AnnouncementDoc } from '../../types/firestore';
 import {
   createAnnouncement, getAnnouncementsForClass, deleteAnnouncement, pinAnnouncement,
@@ -18,6 +19,7 @@ function formatDate(ts: Timestamp | undefined): string {
 
 export default function AnnouncementsPage() {
   const { user } = useAuthStore();
+  const { can } = usePermission();
   const { classes, listenToTeacherClasses } = useTeacherStore();
 
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -163,13 +165,15 @@ export default function AnnouncementsPage() {
                 />
                 <span className="font-baloo font-semibold text-sm text-text-dark">📌 Pin this announcement</span>
               </label>
-              <button
-                onClick={handlePost}
-                disabled={!compTitle.trim() || !compBody.trim() || posting}
-                className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {posting ? 'Posting…' : 'Post Announcement'}
-              </button>
+              {can('announcements.create') && (
+                <button
+                  onClick={handlePost}
+                  disabled={!compTitle.trim() || !compBody.trim() || posting}
+                  className="px-lg py-sm bg-primary text-white font-baloo font-bold text-sm rounded-xl shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {posting ? 'Posting…' : 'Post Announcement'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -225,14 +229,16 @@ export default function AnnouncementsPage() {
                         >
                           {pinning === ann.id ? '…' : '📌'}
                         </button>
-                        <button
-                          onClick={() => handleDelete(ann.id)}
-                          disabled={deleting === ann.id}
-                          title="Delete"
-                          className="w-8 h-8 rounded-lg bg-error/10 text-error flex items-center justify-center hover:bg-error hover:text-white transition-colors"
-                        >
-                          {deleting === ann.id ? '…' : '🗑️'}
-                        </button>
+                        {can('announcements.delete') && (
+                          <button
+                            onClick={() => handleDelete(ann.id)}
+                            disabled={deleting === ann.id}
+                            title="Delete"
+                            className="w-8 h-8 rounded-lg bg-error/10 text-error flex items-center justify-center hover:bg-error hover:text-white transition-colors"
+                          >
+                            {deleting === ann.id ? '…' : '🗑️'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </motion.div>

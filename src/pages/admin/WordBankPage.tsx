@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { usePermission } from '../../hooks/usePermission';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
 import { getWordBankPage, updateWord, approveWord, rejectWord, uploadWordImage } from '../../services/firebase/wordBank';
 import type { WordBankFilters } from '../../services/firebase/wordBank';
@@ -87,6 +88,7 @@ function LangCard({ lang, word }: { lang: LanguageCode; word: WordBankDoc }) {
 export default function WordBankPage() {
   const { user } = useAuthStore();
   const { claims } = useAuth();
+  const { can } = usePermission();
   const isProjectAdmin = claims?.role === 'projectAdmin';
   const myProjectId = claims?.projectId;
 
@@ -462,51 +464,59 @@ export default function WordBankPage() {
                     </div>
 
                     {/* Approve / Reject */}
-                    <div className="border-t border-divider pt-md">
-                      {showRejectInput ? (
-                        <div className="space-y-sm">
-                          <p className="font-baloo font-bold text-sm text-error">Rejection reason</p>
-                          <textarea
-                            value={rejectNote}
-                            onChange={e => setRejectNote(e.target.value)}
-                            placeholder="Explain why this word is being rejected…"
-                            rows={3}
-                            className="w-full px-md py-sm rounded-xl border border-error/40 font-baloo text-sm focus:outline-none focus:ring-1 focus:ring-error"
-                          />
-                          <div className="flex gap-sm">
-                            <button onClick={() => setShowRejectInput(false)} className="flex-1 py-sm rounded-xl border-2 border-divider font-baloo font-semibold text-sm text-text-muted">
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => handleReject(editWord.id)}
-                              disabled={!rejectNote.trim() || saving}
-                              className="flex-1 py-sm rounded-xl bg-error text-white font-baloo font-bold text-sm disabled:opacity-50"
-                            >
-                              {saving ? 'Rejecting…' : 'Confirm Reject'}
-                            </button>
+                    {(can('wordBank.approve') || can('wordBank.reject')) && (
+                      <div className="border-t border-divider pt-md">
+                        {showRejectInput ? (
+                          <div className="space-y-sm">
+                            <p className="font-baloo font-bold text-sm text-error">Rejection reason</p>
+                            <textarea
+                              value={rejectNote}
+                              onChange={e => setRejectNote(e.target.value)}
+                              placeholder="Explain why this word is being rejected…"
+                              rows={3}
+                              className="w-full px-md py-sm rounded-xl border border-error/40 font-baloo text-sm focus:outline-none focus:ring-1 focus:ring-error"
+                            />
+                            <div className="flex gap-sm">
+                              <button onClick={() => setShowRejectInput(false)} className="flex-1 py-sm rounded-xl border-2 border-divider font-baloo font-semibold text-sm text-text-muted">
+                                Cancel
+                              </button>
+                              {can('wordBank.reject') && (
+                                <button
+                                  onClick={() => handleReject(editWord.id)}
+                                  disabled={!rejectNote.trim() || saving}
+                                  className="flex-1 py-sm rounded-xl bg-error text-white font-baloo font-bold text-sm disabled:opacity-50"
+                                >
+                                  {saving ? 'Rejecting…' : 'Confirm Reject'}
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex gap-sm">
-                          <button
-                            onClick={() => handleApprove(editWord.id)}
-                            disabled={saving}
-                            className="flex-1 py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors shadow-sm"
-                          >
-                            {saving ? 'Approving…' : '✓ Approve Word'}
-                          </button>
-                          <button
-                            onClick={() => setShowRejectInput(true)}
-                            className="flex-1 py-md rounded-xl border-2 border-error text-error font-baloo font-bold text-base hover:bg-error hover:text-white transition-colors"
-                          >
-                            ✕ Reject
-                          </button>
-                        </div>
-                      )}
-                      <p className="font-baloo text-xs text-text-muted text-center mt-sm">
-                        Switch to the Content tab to edit word details before approving.
-                      </p>
-                    </div>
+                        ) : (
+                          <div className="flex gap-sm">
+                            {can('wordBank.approve') && (
+                              <button
+                                onClick={() => handleApprove(editWord.id)}
+                                disabled={saving}
+                                className="flex-1 py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors shadow-sm"
+                              >
+                                {saving ? 'Approving…' : '✓ Approve Word'}
+                              </button>
+                            )}
+                            {can('wordBank.reject') && (
+                              <button
+                                onClick={() => setShowRejectInput(true)}
+                                className="flex-1 py-md rounded-xl border-2 border-error text-error font-baloo font-bold text-base hover:bg-error hover:text-white transition-colors"
+                              >
+                                ✕ Reject
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <p className="font-baloo text-xs text-text-muted text-center mt-sm">
+                          Switch to the Content tab to edit word details before approving.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -536,24 +546,28 @@ export default function WordBankPage() {
                     ))}
 
                     {/* Approve/reject section in edit tab too for pending words */}
-                    {isPending && (
+                    {isPending && (can('wordBank.edit') || can('wordBank.approve')) && (
                       <div className="border-t border-divider pt-md">
                         <p className="font-baloo text-xs text-text-muted mb-sm">Save changes then approve, or approve as-is:</p>
                         <div className="flex gap-sm">
-                          <button
-                            onClick={saveEdit}
-                            disabled={saving}
-                            className="flex-1 py-sm rounded-xl bg-primary text-white font-baloo font-bold text-sm hover:bg-primary/90 disabled:opacity-50"
-                          >
-                            {saving ? 'Saving…' : 'Save Changes'}
-                          </button>
-                          <button
-                            onClick={() => handleApprove(editWord!.id)}
-                            disabled={saving}
-                            className="flex-1 py-sm rounded-xl bg-success text-white font-baloo font-bold text-sm hover:bg-success/90 disabled:opacity-50"
-                          >
-                            ✓ Approve
-                          </button>
+                          {can('wordBank.edit') && (
+                            <button
+                              onClick={saveEdit}
+                              disabled={saving}
+                              className="flex-1 py-sm rounded-xl bg-primary text-white font-baloo font-bold text-sm hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              {saving ? 'Saving…' : 'Save Changes'}
+                            </button>
+                          )}
+                          {can('wordBank.approve') && (
+                            <button
+                              onClick={() => handleApprove(editWord!.id)}
+                              disabled={saving}
+                              className="flex-1 py-sm rounded-xl bg-success text-white font-baloo font-bold text-sm hover:bg-success/90 disabled:opacity-50"
+                            >
+                              ✓ Approve
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -618,7 +632,7 @@ export default function WordBankPage() {
               </div>
 
               {/* Modal footer — only show Save for non-review, non-pending-content tabs */}
-              {modalTab !== 'review' && !(modalTab === 'content' && isPending) && (
+              {modalTab !== 'review' && !(modalTab === 'content' && isPending) && can('wordBank.edit') && (
                 <div className="px-lg py-md border-t border-divider flex items-center justify-between">
                   <button onClick={() => setEditWord(null)} className="font-baloo font-semibold text-sm text-text-muted hover:text-text-dark">
                     Cancel

@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { functions, storage } from '../../config/firebase';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
-import { getWordBankPage, createPendingWord, updateWord } from '../../services/firebase/wordBank';
+import { getWordBankPage, createPendingWord, updateWord, getTeacherPendingWords, type TeacherMeta } from '../../services/firebase/wordBank';
 
 interface WordPickerModalProps {
   open: boolean;
@@ -16,6 +16,8 @@ interface WordPickerModalProps {
   /** map of wordId → levelNum for words in OTHER levels — shown with badge */
   otherLevelMap: Record<string, number>;
   onConfirm: (wordIds: string[]) => void;
+  /** Called when a brand-new pending word is created — separate from browsed words */
+  onWordCreated?: (wordId: string) => void;
   /** When set, opens in word-edit mode instead of add mode */
   editMode?: { wordId: string; wordData: WordBankDoc };
   /** Called when an existing word edit is saved */
@@ -24,6 +26,9 @@ interface WordPickerModalProps {
     sentence: string; imageUrl?: string | null;
   }) => void;
   teacherUid: string;
+  teacherMeta?: Omit<TeacherMeta, 'teacherUid'>;
+  /** Used to filter browse results to words relevant to the teacher's project */
+  browseProjectId?: string;
 }
 
 type Tab = 'browse' | 'create' | 'edit';
@@ -80,14 +85,18 @@ export function WordPickerModal({
   currentLevelIds,
   otherLevelMap,
   onConfirm,
+  onWordCreated,
   editMode,
   onEditConfirm,
   teacherUid,
+  teacherMeta,
+  browseProjectId,
 }: WordPickerModalProps) {
   // ── Browse tab state ───────────────────────────────────────────────────────
   const [tab, setTab] = useState<Tab>('browse');
   const [search, setSearch] = useState('');
   const [words, setWords] = useState<Array<{ id: string } & WordBankDoc>>([]);
+  const [myPendingWords, setMyPendingWords] = useState<Array<{ id: string } & WordBankDoc>>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -144,17 +153,35 @@ export function WordPickerModal({
   const load = useCallback(async (searchTerm: string) => {
     setLoading(true);
     try {
-      const { words: fetched } = await getWordBankPage(
-        { status: 'active', search: searchTerm || undefined },
-        undefined,
-        100,
+      const [{ words: fetched }, myPending] = await Promise.all([
+        getWordBankPage(
+          {
+            status: 'active',
+            search: searchTerm || undefined,
+            ...(browseProjectId ? { projectId: browseProjectId } : {}),
+          },
+          undefined,
+          100,
+        ),
+        teacherUid ? getTeacherPendingWords(teacherUid) : Promise.resolve([]),
+      ]);
+      const excluded = new Set(currentLevelIds);
+      setWords(fetched.filter(w => !excluded.has(w.id)));
+      // Show teacher's own pending words (filtered by search, not already in level)
+      const searchLower = searchTerm.toLowerCase();
+      setMyPendingWords(
+        myPending.filter(w => {
+          if (excluded.has(w.id)) return false;
+          if (!searchLower) return true;
+          return Object.values(w.word ?? {}).some(v => v?.toLowerCase().includes(searchLower))
+            || Object.values(w.meaning ?? {}).some(v => v?.toLowerCase().includes(searchLower));
+        })
       );
-      setWords(fetched.filter(w => !currentLevelIds.includes(w.id)));
     } catch (err) {
       console.error('WordPickerModal load error:', err);
     }
     setLoading(false);
-  }, [currentLevelIds.join(',')]);
+  }, [currentLevelIds.join(','), browseProjectId, teacherUid]);
 
   useEffect(() => {
     if (open && tab === 'browse') load(search);
@@ -281,7 +308,7 @@ export function WordPickerModal({
           // Use AI-generated URL directly if available
           ...(generatedImageUrl ? { imageUrl: generatedImageUrl } : {}),
         },
-        teacherUid,
+        { teacherUid, ...teacherMeta },
       );
 
       // Upload manually selected file after word creation
@@ -292,9 +319,11 @@ export function WordPickerModal({
         await updateWord(wordId, { imageUrl: uploadedUrl });
       }
 
+      onWordCreated?.(wordId);
       onConfirm([wordId]);
       onClose();
-    } catch {
+    } catch (err) {
+      console.error('Failed to create word:', err);
       setCreateError('Failed to create word. Please try again.');
     }
     setCreating(false);
@@ -404,74 +433,121 @@ export function WordPickerModal({
                   )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-md">
+                <div className="flex-1 overflow-y-auto p-md space-y-md">
+                  {/* ── Teacher's own pending words ── */}
+                  {myPendingWords.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-xs mb-sm">
+                        <span className="font-baloo font-bold text-xs text-amber-700">⏳ Your Pending Words</span>
+                        <span className="text-[10px] font-baloo text-amber-600 bg-amber-50 border border-amber-200 px-xs py-0.5 rounded-full">awaiting approval — select to reuse</span>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-sm">
+                        {myPendingWords.map(w => {
+                          const isSelected = selected.has(w.id);
+                          return (
+                            <button
+                              key={w.id}
+                              onClick={() => toggle(w.id)}
+                              className={`relative flex flex-col items-center p-sm rounded-xl border-2 transition-all ${
+                                isSelected
+                                  ? 'border-amber-500 bg-amber-50 shadow-md'
+                                  : 'border-amber-200 bg-amber-50/40 hover:border-amber-400'
+                              }`}
+                            >
+                              {isSelected && (
+                                <div className="absolute top-1 right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center z-10">
+                                  <span className="text-white text-[10px]">✓</span>
+                                </div>
+                              )}
+                              <div className="absolute top-1 left-1 px-xs py-0.5 bg-amber-400 text-white rounded text-[8px] font-baloo font-bold z-10">
+                                pending
+                              </div>
+                              <div className="flex flex-col items-center w-full mt-xs">
+                                {w.imageUrl ? (
+                                  <img src={w.imageUrl} alt="" className="w-12 h-12 object-cover rounded-lg mb-xs" />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center text-2xl mb-xs">📝</div>
+                                )}
+                                <p className="font-baloo font-bold text-[11px] text-text-dark text-center leading-tight line-clamp-2">
+                                  {w.word?.[learningLanguage] || w.word?.en}
+                                </p>
+                                <p className="font-baloo text-[9px] text-text-muted text-center leading-tight">
+                                  {w.word?.en}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Active words from word bank ── */}
                   {loading ? (
-                    <div className="flex items-center justify-center h-full gap-sm text-text-muted font-baloo">
+                    <div className="flex items-center justify-center py-xl gap-sm text-text-muted font-baloo">
                       <Spinner /> Loading…
                     </div>
-                  ) : words.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-sm text-text-muted">
+                  ) : words.length === 0 && myPendingWords.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-xl gap-sm text-text-muted">
                       <span className="text-4xl">🔍</span>
                       <p className="font-baloo font-semibold">No words found</p>
                       <p className="font-baloo text-sm text-center">
                         {search ? 'Try a different search term, or ' : 'All active words are already in this level, or '}
-                        <button
-                          onClick={() => setTab('create')}
-                          className="text-primary underline"
-                        >
+                        <button onClick={() => setTab('create')} className="text-primary underline">
                           create a new word
                         </button>
                       </p>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-sm">
-                      {words.map(w => {
-                        const isSelected = selected.has(w.id);
-                        const inOtherLevel = otherLevelMap[w.id];
-                        return (
-                          <button
-                            key={w.id}
-                            onClick={() => toggle(w.id)}
-                            className={`relative flex flex-col items-center p-sm rounded-xl border-2 transition-all ${
-                              isSelected
-                                ? 'border-primary bg-lavender-light shadow-md'
-                                : 'border-divider bg-white hover:border-primary/40'
-                            }`}
-                          >
-                            {isSelected && (
-                              <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center z-10">
-                                <span className="text-white text-[10px]">✓</span>
-                              </div>
-                            )}
-                            {inOtherLevel && !isSelected && (
-                              <div className="absolute top-1 left-1 px-xs py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-baloo font-bold z-10">
-                                Lv {inOtherLevel}
-                              </div>
-                            )}
-                            <div className="flex flex-col items-center w-full">
-                              {w.imageUrl ? (
-                                <img
-                                  src={w.imageUrl}
-                                  alt=""
-                                  className="w-12 h-12 object-cover rounded-lg mb-xs"
-                                />
-                              ) : (
-                                <div className="w-12 h-12 rounded-lg bg-lavender-light flex items-center justify-center text-2xl mb-xs">
-                                  📝
+                  ) : words.length > 0 ? (
+                    <div>
+                      {myPendingWords.length > 0 && (
+                        <p className="font-baloo font-bold text-xs text-text-muted mb-sm">Active Words</p>
+                      )}
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-sm">
+                        {words.map(w => {
+                          const isSelected = selected.has(w.id);
+                          const inOtherLevel = otherLevelMap[w.id];
+                          return (
+                            <button
+                              key={w.id}
+                              onClick={() => toggle(w.id)}
+                              className={`relative flex flex-col items-center p-sm rounded-xl border-2 transition-all ${
+                                isSelected
+                                  ? 'border-primary bg-lavender-light shadow-md'
+                                  : 'border-divider bg-white hover:border-primary/40'
+                              }`}
+                            >
+                              {isSelected && (
+                                <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center z-10">
+                                  <span className="text-white text-[10px]">✓</span>
                                 </div>
                               )}
-                              <p className="font-baloo font-bold text-[11px] text-text-dark text-center leading-tight line-clamp-2">
-                                {w.word?.[learningLanguage] || w.word?.en}
-                              </p>
-                              <p className="font-baloo text-[9px] text-text-muted text-center leading-tight">
-                                {w.word?.en}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
+                              {inOtherLevel && !isSelected && (
+                                <div className="absolute top-1 left-1 px-xs py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-baloo font-bold z-10">
+                                  Lv {inOtherLevel}
+                                </div>
+                              )}
+                              <div className="flex flex-col items-center w-full">
+                                {w.imageUrl ? (
+                                  <img src={w.imageUrl} alt="" className="w-12 h-12 object-cover rounded-lg mb-xs" />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-lavender-light flex items-center justify-center text-2xl mb-xs">
+                                    📝
+                                  </div>
+                                )}
+                                <p className="font-baloo font-bold text-[11px] text-text-dark text-center leading-tight line-clamp-2">
+                                  {w.word?.[learningLanguage] || w.word?.en}
+                                </p>
+                                <p className="font-baloo text-[9px] text-text-muted text-center leading-tight">
+                                  {w.word?.en}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="px-lg py-md border-t border-divider flex items-center justify-between">
