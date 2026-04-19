@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { getWordBankPage, updateWord, uploadWordImage, notifyWordSubmitted } from '../../services/firebase/wordBank';
+import { getWordBankPage, updateWord, uploadWordImage } from '../../services/firebase/wordBank';
 import { LANGUAGE_LABELS } from '../../services/firebase/languageCurricula';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
 
@@ -157,41 +157,27 @@ export default function WordEditorPage() {
         showToast('Word updated!');
         setEditWord(null);
       } else {
-        // Submit for review — content reviewer will approve before it goes live
-        const now = serverTimestamp();
-        const submittedWordData = {
-          numericId: 0,
-          status: 'pending',
-          active: false,
-          wordType: form.wordType,
-          difficulty: form.difficulty,
-          grade: form.grade,
-          gradeContext: form.grade,
-          word: form.word,
-          pronunciation: form.pronunciation,
-          meaning: form.meaning,
-          sentence: form.sentence,
-          imageUrl: null,
-          imageUrls: [],
-          audioUrl: { word: EMPTY_LANG(), meaning: EMPTY_LANG(), sentence: EMPTY_LANG() },
-          submittedBy: user.uid,
-          submittedByName: user.email ?? 'content writer',
-          submittedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        };
-        const ref = await addDoc(collection(db, 'wordBank'), submittedWordData);
+        // Submit for review via CF — creates word + admin notification atomically
+        const submitWordFn = httpsCallable<unknown, { wordId: string }>(functions, 'submitWord');
+        const result = await submitWordFn({
+          data: {
+            wordType: form.wordType,
+            difficulty: form.difficulty,
+            grade: form.grade,
+            gradeContext: form.grade,
+            word: form.word,
+            pronunciation: form.pronunciation,
+            meaning: form.meaning,
+            sentence: form.sentence,
+            imageUrl: null,
+            imageUrls: [],
+            audioUrl: { word: EMPTY_LANG(), meaning: EMPTY_LANG(), sentence: EMPTY_LANG() },
+            submittedByName: user.email ?? 'content writer',
+          },
+        });
         for (const idx of [0, 1, 2] as const) {
-          if (imageFiles[idx]) await uploadWordImage(ref.id, imageFiles[idx]!, idx);
+          if (imageFiles[idx]) await uploadWordImage(result.data.wordId, imageFiles[idx]!, idx);
         }
-        // Notify admins that a new word is pending review
-        await notifyWordSubmitted(ref.id, {
-          word: form.word,
-          wordType: form.wordType,
-          gradeContext: form.grade,
-          submittedBy: user.uid,
-          submittedByName: user.email ?? 'content writer',
-        }).catch(err => console.warn('Admin notification failed:', err));
         showToast('Submitted for review!');
         setForm(EMPTY_FORM());
         setImageFiles([null, null, null]);

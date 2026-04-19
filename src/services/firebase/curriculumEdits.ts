@@ -1,23 +1,24 @@
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc,
-  query, where, serverTimestamp, getCountFromServer, Timestamp,
+  collection, getDocs,
+  query, where, getCountFromServer,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../config/firebase';
-import type { CurriculumEditDoc, CurriculumLevel, LanguageCode, ClassCustomCurriculum } from '../../types/firestore';
+import type { CurriculumEditDoc, CurriculumLevel, LanguageCode } from '../../types/firestore';
 
 const COL = 'curriculumEdits';
 
 export async function submitCurriculumEdit(
-  data: Omit<CurriculumEditDoc, 'submittedAt' | 'status' | 'adoptedBy' | 'resolvedLevels'>,
+  data: {
+    classId: string;
+    proposedLevels: Array<{ levelNum: number; wordIds: string[] }>;
+    newWords?: Array<Record<string, unknown>>;
+    shareWithProject?: boolean;
+  },
 ): Promise<string> {
-  const ref = await addDoc(collection(db, COL), {
-    ...data,
-    status: 'pending',
-    adoptedBy: [],
-    submittedAt: serverTimestamp(),
-  });
-  return ref.id;
+  const fn = httpsCallable<unknown, { editId: string }>(functions, 'submitCurriculumEdit');
+  const result = await fn(data);
+  return result.data.editId;
 }
 
 export async function getCurriculumEditsForClass(
@@ -53,46 +54,18 @@ export async function getPendingEditsCount(): Promise<number> {
   return snap.data().count;
 }
 
-export async function approveCurriculumEdit(editId: string, adminUid: string): Promise<void> {
-  // Try Cloud Function first; fall back to direct write if CF not deployed
-  try {
-    const fn = httpsCallable(functions, 'approveCurriculumEdit');
-    await fn({ editId });
-  } catch {
-    // Fallback: directly update the edit status + apply to class
-    const editSnap = await getDoc(doc(db, COL, editId));
-    if (!editSnap.exists()) throw new Error('Edit not found');
-    const edit = editSnap.data() as CurriculumEditDoc;
-    const resolvedLevels = edit.resolvedLevels ?? edit.proposedLevels;
-
-    await updateDoc(doc(db, COL, editId), {
-      status: 'approved',
-      reviewedBy: adminUid,
-      reviewedAt: serverTimestamp(),
-      resolvedLevels,
-    });
-
-    // Write customCurriculum to the class
-    const customCurriculum: ClassCustomCurriculum = {
-      levels: resolvedLevels,
-      adoptedFrom: editId,
-      appliedAt: Timestamp.now(),
-    };
-    await updateDoc(doc(db, 'classes', edit.classId), { customCurriculum });
-  }
+export async function approveCurriculumEdit(editId: string, _adminUid: string): Promise<void> {
+  const fn = httpsCallable(functions, 'approveCurriculumEdit');
+  await fn({ editId });
 }
 
 export async function rejectCurriculumEdit(
   editId: string,
-  adminUid: string,
+  _adminUid: string,
   note: string,
 ): Promise<void> {
-  await updateDoc(doc(db, COL, editId), {
-    status: 'rejected',
-    rejectionNote: note,
-    reviewedBy: adminUid,
-    reviewedAt: serverTimestamp(),
-  });
+  const fn = httpsCallable(functions, 'rejectCurriculumEdit');
+  await fn({ editId, note });
 }
 
 export async function getSharedCurricula(
@@ -115,20 +88,8 @@ export async function getSharedCurricula(
 export async function adoptSharedCurriculum(
   classId: string,
   editId: string,
-  resolvedLevels: CurriculumLevel[],
+  _resolvedLevels: CurriculumLevel[],
 ): Promise<void> {
-  const customCurriculum: ClassCustomCurriculum = {
-    levels: resolvedLevels,
-    adoptedFrom: editId,
-    appliedAt: Timestamp.now(),
-  };
-  await updateDoc(doc(db, 'classes', classId), { customCurriculum });
-  // Track adoption
-  const editSnap = await getDoc(doc(db, COL, editId));
-  if (editSnap.exists()) {
-    const current = (editSnap.data() as CurriculumEditDoc).adoptedBy ?? [];
-    if (!current.includes(classId)) {
-      await updateDoc(doc(db, COL, editId), { adoptedBy: [...current, classId] });
-    }
-  }
+  const fn = httpsCallable(functions, 'adoptCurriculumEdit');
+  await fn({ classId, editId });
 }

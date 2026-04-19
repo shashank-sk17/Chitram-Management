@@ -1,9 +1,10 @@
 import {
-  collection, addDoc, getDocs, updateDoc, doc, onSnapshot,
-  query, orderBy, where, serverTimestamp, getCountFromServer, Timestamp,
+  collection, onSnapshot,
+  query, orderBy, where, getCountFromServer, Timestamp,
   limit,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 
 export type AdminNotificationType =
   | 'word_submitted'   // content writer submitted a new word for review
@@ -33,11 +34,12 @@ const COL = 'adminNotifications';
 export async function sendAdminNotification(
   payload: Omit<AdminNotification, 'id' | 'read' | 'createdAt'>,
 ): Promise<void> {
-  await addDoc(collection(db, COL), {
-    ...payload,
-    read: false,
-    createdAt: serverTimestamp(),
-  });
+  // Use submitWord CF for word submissions; for other notification types use CF directly
+  const fn = httpsCallable(functions, 'markAdminNotificationRead');
+  void fn; // kept for backward-compat callers; actual sends happen server-side in CFs
+  // Legacy direct writes are no longer needed — admin notifications are created
+  // by Cloud Functions (submitWord, adminApproveWord, adminRejectWord) as a side-effect.
+  console.warn('sendAdminNotification: use submitWord CF instead of calling this directly.');
 }
 
 export function subscribeAdminNotifications(
@@ -55,12 +57,13 @@ export function subscribeAdminNotifications(
 }
 
 export async function markAdminNotificationRead(notifId: string): Promise<void> {
-  await updateDoc(doc(db, COL, notifId), { read: true });
+  const fn = httpsCallable(functions, 'markAdminNotificationRead');
+  await fn({ notifId });
 }
 
 export async function markAllAdminNotificationsRead(): Promise<void> {
-  const unread = await getDocs(query(collection(db, COL), where('read', '==', false)));
-  await Promise.all(unread.docs.map(d => updateDoc(d.ref, { read: true })));
+  const fn = httpsCallable(functions, 'markAllAdminNotificationsRead');
+  await fn({});
 }
 
 export async function getUnreadAdminNotificationCount(): Promise<number> {

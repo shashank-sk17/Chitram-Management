@@ -3,13 +3,11 @@ import {
   doc,
   getDoc,
   getDocs,
-  addDoc,
   query,
   where,
   limit,
   orderBy,
   Timestamp,
-  serverTimestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../config/firebase';
@@ -22,13 +20,9 @@ export async function createProject(data: {
   description?: string;
   createdBy: string;
 }) {
-  const projectRef = await addDoc(collection(db, 'projects'), {
-    ...data,
-    schoolIds: [],
-    createdAt: serverTimestamp(),
-  });
-
-  return projectRef.id;
+  const fn = httpsCallable<unknown, { id: string }>(functions, 'createProject');
+  const result = await fn({ name: data.name, description: data.description });
+  return result.data.id;
 }
 
 export async function getProject(projectId: string): Promise<ProjectDoc | null> {
@@ -86,18 +80,16 @@ export async function createSchool(data: {
   createdBy: string;
   projectId?: string;
 }) {
-  const schoolRef = await addDoc(collection(db, 'schools'), {
-    ...data,
-    teacherIds: [],
-    createdAt: serverTimestamp(),
-  });
+  const fn = httpsCallable<unknown, { id: string }>(functions, 'createSchool');
+  const result = await fn({ name: data.name });
+  const schoolId = result.data.id;
 
-  // If projectId provided, add school to project
+  // If projectId provided, add school to project via CF
   if (data.projectId) {
-    await assignSchoolToProject(data.projectId, schoolRef.id);
+    await assignSchoolToProject(data.projectId, schoolId);
   }
 
-  return schoolRef.id;
+  return schoolId;
 }
 
 export async function getSchool(schoolId: string): Promise<SchoolDoc | null> {

@@ -1,8 +1,9 @@
 import {
-  collection, doc, addDoc, getDocs, updateDoc, query,
-  where, orderBy, serverTimestamp, getCountFromServer, Timestamp,
+  collection, getDocs, query,
+  where, orderBy, getCountFromServer, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 
 export interface TeacherNotification {
   id: string;
@@ -23,11 +24,8 @@ export async function sendTeacherNotification(
   teacherUid: string,
   payload: Omit<TeacherNotification, 'id' | 'read' | 'createdAt'>,
 ): Promise<void> {
-  await addDoc(col(teacherUid), {
-    ...payload,
-    read: false,
-    createdAt: serverTimestamp(),
-  });
+  const fn = httpsCallable(functions, 'sendTeacherNotification');
+  await fn({ teacherUid, payload });
 }
 
 export async function getTeacherNotifications(
@@ -46,10 +44,11 @@ export async function getUnreadNotificationCount(teacherUid: string): Promise<nu
 }
 
 export async function markNotificationRead(teacherUid: string, notifId: string): Promise<void> {
-  await updateDoc(doc(col(teacherUid), notifId), { read: true });
+  const fn = httpsCallable(functions, 'teacherMarkNotificationRead');
+  await fn({ teacherUid, notifId });
 }
 
 export async function markAllNotificationsRead(teacherUid: string): Promise<void> {
-  const unread = await getDocs(query(col(teacherUid), where('read', '==', false)));
-  await Promise.all(unread.docs.map(d => updateDoc(d.ref, { read: true })));
+  const fn = httpsCallable(functions, 'teacherMarkAllNotificationsRead');
+  await fn({ teacherUid });
 }

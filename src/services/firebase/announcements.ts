@@ -1,8 +1,9 @@
 import {
-  collection, doc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp,
+  collection, getDocs,
+  query, where, orderBy,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import type { AnnouncementDoc } from '../../types/firestore';
 
 const COL = 'announcements';
@@ -10,11 +11,9 @@ const COL = 'announcements';
 export async function createAnnouncement(
   data: Omit<AnnouncementDoc, 'createdAt'>,
 ): Promise<string> {
-  const ref = await addDoc(collection(db, COL), {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
+  const fn = httpsCallable<unknown, { id: string }>(functions, 'teacherCreateAnnouncement');
+  const result = await fn({ data });
+  return result.data.id;
 }
 
 export async function getAnnouncementsForClass(
@@ -43,9 +42,11 @@ export async function getAnnouncementsForTeacher(
 }
 
 export async function pinAnnouncement(announcementId: string, pinned: boolean): Promise<void> {
-  await updateDoc(doc(db, COL, announcementId), { pinned });
+  const fn = httpsCallable(functions, 'teacherPinAnnouncement');
+  await fn({ announcementId, pinned });
 }
 
 export async function deleteAnnouncement(announcementId: string): Promise<void> {
-  await deleteDoc(doc(db, COL, announcementId));
+  const fn = httpsCallable(functions, 'teacherDeleteAnnouncement');
+  await fn({ announcementId });
 }

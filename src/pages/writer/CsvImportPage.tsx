@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -116,27 +116,23 @@ export default function CsvImportPage() {
     let failed = 0;
     const emptyNull = Object.fromEntries(LANGS.map(l => [l, null]));
 
+    const submitWordFn = httpsCallable(functions, 'submitWord');
     for (let i = 0; i < validRows.length; i++) {
       const row = validRows[i];
       try {
-        await addDoc(collection(db, 'wordBank'), {
-          numericId: 0,
-          status: 'pending',
-          active: false,
-          wordType: row.wordType,
-          difficulty: row.difficulty,
-          word: row.word,
-          pronunciation: row.pronunciation,
-          meaning: row.meaning,
-          sentence: row.sentence,
-          imageUrl: null,
-          imageUrls: [],
-          audioUrl: { word: { ...emptyNull }, meaning: { ...emptyNull }, sentence: { ...emptyNull } },
-          submittedBy: user.uid,
-          submittedByName: user.email ?? 'content writer',
-          submittedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        await submitWordFn({
+          data: {
+            wordType: row.wordType,
+            difficulty: row.difficulty,
+            word: row.word,
+            pronunciation: row.pronunciation,
+            meaning: row.meaning,
+            sentence: row.sentence,
+            imageUrl: null,
+            imageUrls: [],
+            audioUrl: { word: { ...emptyNull }, meaning: { ...emptyNull }, sentence: { ...emptyNull } },
+            submittedByName: user.email ?? 'content writer',
+          },
         });
         ok++;
       } catch {

@@ -4,12 +4,9 @@ import {
   query,
   where,
   onSnapshot,
-  doc,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../config/firebase';
 import type { ClassDoc, StudentDoc } from '../types/firestore';
 
 interface TeacherState {
@@ -111,47 +108,16 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
     return unsubscribe;
   },
 
-  // Approve a pending student
+  // Approve a pending student — uses Admin SDK via CF to write to locked collections
   approveStudent: async (classId, studentId) => {
-    const classRef = doc(db, 'classes', classId);
-
-    await updateDoc(classRef, {
-      studentIds: arrayUnion(studentId),
-      pendingStudentIds: arrayRemove(studentId),
-    });
-
-    // Update both /students/{uid} and /users/{uid} so the kid app reads the correct state
-    await updateDoc(doc(db, 'students', studentId), {
-      classId,
-      classIds: arrayUnion(classId),
-      kidType: 'classroom',
-    });
-    await updateDoc(doc(db, 'users', studentId), {
-      classId,
-      classIds: arrayUnion(classId),
-      kidType: 'classroom',
-    }).catch(() => {}); // non-fatal if /users/{uid} doesn't exist for this student type
+    const fn = httpsCallable(functions, 'teacherApproveStudent');
+    await fn({ classId, studentId });
   },
 
-  // Reject a pending student
+  // Reject a pending student — uses Admin SDK via CF to write to locked collections
   rejectStudent: async (classId, studentId) => {
-    const classRef = doc(db, 'classes', classId);
-
-    await updateDoc(classRef, {
-      pendingStudentIds: arrayRemove(studentId),
-    });
-
-    // Update both /students/{uid} and /users/{uid} so the kid app reads the correct state
-    await updateDoc(doc(db, 'students', studentId), {
-      classId: null,
-      classIds: arrayRemove(classId),
-      kidType: 'individual',
-    });
-    await updateDoc(doc(db, 'users', studentId), {
-      classId: null,
-      classIds: arrayRemove(classId),
-      kidType: 'individual',
-    }).catch(() => {}); // non-fatal if /users/{uid} doesn't exist for this student type
+    const fn = httpsCallable(functions, 'teacherRejectStudent');
+    await fn({ classId, studentId });
   },
 
   // Get students for a specific class (approved only)

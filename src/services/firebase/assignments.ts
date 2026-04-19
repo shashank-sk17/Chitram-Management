@@ -1,8 +1,9 @@
 import {
-  collection, doc, getDocs, addDoc, updateDoc,
-  query, where, serverTimestamp, collectionGroup,
+  collection, doc, getDocs,
+  query, where, collectionGroup,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import type { McqAssignmentDoc, StudentSubmissionDoc } from '../../types/firestore';
 
 const COL = 'mcqAssignments';
@@ -10,11 +11,9 @@ const COL = 'mcqAssignments';
 export async function createMcqAssignment(
   data: Omit<McqAssignmentDoc, 'createdAt'>,
 ): Promise<string> {
-  const ref = await addDoc(collection(db, COL), {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
+  const fn = httpsCallable<unknown, { id: string }>(functions, 'teacherCreateMcqAssignment');
+  const result = await fn({ data });
+  return result.data.id;
 }
 
 export async function getMcqAssignmentsForClass(
@@ -49,13 +48,16 @@ export async function getSubmissionsForAssignment(
 }
 
 export async function closeAssignment(assignmentId: string): Promise<void> {
-  await updateDoc(doc(db, COL, assignmentId), { status: 'closed' });
+  const fn = httpsCallable(functions, 'teacherUpdateAssignmentStatus');
+  await fn({ assignmentId, status: 'closed' });
 }
 
 export async function publishAssignment(assignmentId: string): Promise<void> {
-  await updateDoc(doc(db, COL, assignmentId), { status: 'active' });
+  const fn = httpsCallable(functions, 'teacherUpdateAssignmentStatus');
+  await fn({ assignmentId, status: 'active' });
 }
 
 export async function deleteAssignment(assignmentId: string): Promise<void> {
-  await updateDoc(doc(db, COL, assignmentId), { status: 'closed', deletedAt: serverTimestamp() });
+  const fn = httpsCallable(functions, 'teacherUpdateAssignmentStatus');
+  await fn({ assignmentId, status: 'closed' });
 }
