@@ -4,18 +4,15 @@ import {
   getDoc,
   getDocs,
   addDoc,
-  updateDoc,
-  deleteDoc,
   query,
   where,
   limit,
   orderBy,
   Timestamp,
   serverTimestamp,
-  arrayUnion,
-  arrayRemove,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import type { ProjectDoc, SchoolDoc, TeacherDoc, StudentDoc, LearningAttemptDoc } from '../../types/firestore';
 
 // ===== Projects =====
@@ -55,41 +52,30 @@ export async function updateProject(
   projectId: string,
   updates: Partial<ProjectDoc>
 ) {
-  await updateDoc(doc(db, 'projects', projectId), updates);
+  const fn = httpsCallable(functions, 'adminUpdateProject');
+  await fn({ projectId, data: updates });
 }
 
 export async function deleteProject(projectId: string) {
-  await deleteDoc(doc(db, 'projects', projectId));
+  const fn = httpsCallable(functions, 'adminDeleteProject');
+  await fn({ projectId });
 }
 
 export async function assignSchoolToProject(
   projectId: string,
   schoolId: string
 ) {
-  // Add schoolId to project
-  await updateDoc(doc(db, 'projects', projectId), {
-    schoolIds: arrayUnion(schoolId),
-  });
-
-  // Add projectId to school
-  await updateDoc(doc(db, 'schools', schoolId), {
-    projectId,
-  });
+  // Uses existing assignSchoolToProject CF (already server-side)
+  const fn = httpsCallable(functions, 'assignSchoolToProject');
+  await fn({ projectId, schoolId });
 }
 
 export async function removeSchoolFromProject(
   projectId: string,
   schoolId: string
 ) {
-  // Remove schoolId from project
-  await updateDoc(doc(db, 'projects', projectId), {
-    schoolIds: arrayRemove(schoolId),
-  });
-
-  // Remove projectId from school
-  await updateDoc(doc(db, 'schools', schoolId), {
-    projectId: null,
-  });
+  const fn = httpsCallable(functions, 'adminRemoveSchoolFromProject');
+  await fn({ projectId, schoolId });
 }
 
 // ===== Schools =====
@@ -163,11 +149,13 @@ export async function updateSchool(
   schoolId: string,
   updates: Partial<SchoolDoc>
 ) {
-  await updateDoc(doc(db, 'schools', schoolId), updates);
+  const fn = httpsCallable(functions, 'adminUpdateSchool');
+  await fn({ schoolId, data: updates });
 }
 
 export async function deleteSchool(schoolId: string) {
-  await deleteDoc(doc(db, 'schools', schoolId));
+  const fn = httpsCallable(functions, 'adminDeleteSchool');
+  await fn({ schoolId });
 }
 
 // ===== Teachers =====

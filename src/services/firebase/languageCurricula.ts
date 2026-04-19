@@ -1,7 +1,8 @@
 import {
-  collection, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp,
+  collection, doc, getDoc, getDocs, query, where,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import type { LanguageCurriculumDoc, LanguageCode, CurriculumLevel } from '../../types/firestore';
 
 const COL = 'languageCurricula';
@@ -29,21 +30,10 @@ export async function updateLanguageCurriculum(
   lang: LanguageCode,
   grade: number,
   levels: CurriculumLevel[],
-  uid: string,
+  _uid: string,
 ): Promise<void> {
-  const id = curriculumId(lang, grade);
-  const existing = await getDoc(doc(db, COL, id));
-  const currentVersion = existing.exists() ? ((existing.data() as LanguageCurriculumDoc).version ?? 0) : 0;
-
-  await setDoc(doc(db, COL, id), {
-    language: lang,
-    grade,
-    active: true,
-    version: currentVersion + 1,
-    levels,
-    updatedAt: serverTimestamp(),
-    updatedBy: uid,
-  });
+  const fn = httpsCallable(functions, 'adminUpdateLanguageCurriculum');
+  await fn({ docId: curriculumId(lang, grade), levels });
 }
 
 export async function getAllCurriculaForLang(

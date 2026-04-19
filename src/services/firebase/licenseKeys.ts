@@ -1,69 +1,44 @@
 import {
-  collection, doc, getDocs, writeBatch, updateDoc,
-  query, where, orderBy, serverTimestamp, Timestamp,
+  collection, doc, getDocs,
+  query, where, orderBy, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import type { LicenseKeyDoc, LanguageCode } from '../../types/firestore';
 
 const COL = 'licenseKeys';
 
-// Generate a random uppercase alphanumeric key (excludes I, O, 0, 1 for readability)
-function generateKey(length = 8): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
 export async function createLicenseKey(
   grade: number,
   language: LanguageCode,
-  adminUid: string,
+  _adminUid: string,
   expiresAt?: Date,
 ): Promise<string> {
-  const key = generateKey();
-  const batch = writeBatch(db);
-  const docRef = doc(db, COL, key);
-  batch.set(docRef, {
-    key,
+  const fn = httpsCallable<unknown, { keys: string[] }>(functions, 'adminCreateLicenseKeys');
+  const result = await fn({
+    count: 1,
     grade,
     language,
-    status: 'unused',
-    createdBy: adminUid,
-    createdAt: serverTimestamp(),
-    ...(expiresAt ? { expiresAt: Timestamp.fromDate(expiresAt) } : {}),
+    ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}),
   });
-  await batch.commit();
-  return key;
+  return result.data.keys[0];
 }
 
 export async function createLicenseKeysBulk(
   count: number,
   grade: number,
   language: LanguageCode,
-  adminUid: string,
+  _adminUid: string,
   expiresAt?: Date,
 ): Promise<string[]> {
-  const keys: string[] = [];
-  const BATCH_SIZE = 500;
-
-  for (let i = 0; i < count; i += BATCH_SIZE) {
-    const batch = writeBatch(db);
-    const chunkSize = Math.min(BATCH_SIZE, count - i);
-    for (let j = 0; j < chunkSize; j++) {
-      const key = generateKey();
-      keys.push(key);
-      batch.set(doc(db, COL, key), {
-        key,
-        grade,
-        language,
-        status: 'unused',
-        createdBy: adminUid,
-        createdAt: serverTimestamp(),
-        ...(expiresAt ? { expiresAt: Timestamp.fromDate(expiresAt) } : {}),
-      });
-    }
-    await batch.commit();
-  }
-  return keys;
+  const fn = httpsCallable<unknown, { keys: string[] }>(functions, 'adminCreateLicenseKeys');
+  const result = await fn({
+    count,
+    grade,
+    language,
+    ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}),
+  });
+  return result.data.keys;
 }
 
 export interface LicenseKeyFilters {
@@ -84,7 +59,8 @@ export async function getLicenseKeys(
 }
 
 export async function revokeLicenseKey(key: string): Promise<void> {
-  await updateDoc(doc(db, COL, key), { status: 'expired' });
+  const fn = httpsCallable(functions, 'adminRevokeLicenseKey');
+  await fn({ key });
 }
 
 export function exportLicenseKeysCSV(keys: Array<{ id: string } & LicenseKeyDoc>): void {

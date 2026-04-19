@@ -1,7 +1,8 @@
 import {
-  doc, getDoc, setDoc, deleteDoc, onSnapshot, serverTimestamp, collection, getDocs,
+  doc, getDoc, onSnapshot, collection, getDocs,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 
 export type VisibilityRole = 'pm' | 'principal' | 'projectAdmin' | 'teacher';
 
@@ -75,12 +76,10 @@ export async function getAnalyticsVisibility(role: VisibilityRole): Promise<Anal
 export async function setAnalyticsVisibility(
   role: VisibilityRole,
   sections: AnalyticsSections,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, roleDocId(role)), {
-    type: 'role', targetId: role, sections,
-    updatedAt: serverTimestamp(), updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetAnalyticsVisibility');
+  await fn({ docId: roleDocId(role), type: 'role', targetId: role, sections });
 }
 
 export function subscribeAnalyticsVisibility(
@@ -103,16 +102,15 @@ export async function getProjectOverride(projectId: string): Promise<SectionsOve
 export async function setProjectOverride(
   projectId: string,
   sections: SectionsOverride,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, projectDocId(projectId)), {
-    type: 'project', targetId: projectId, sections,
-    updatedAt: serverTimestamp(), updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetAnalyticsVisibility');
+  await fn({ docId: projectDocId(projectId), type: 'project', targetId: projectId, sections });
 }
 
 export async function deleteProjectOverride(projectId: string): Promise<void> {
-  await deleteDoc(doc(db, COL, projectDocId(projectId)));
+  const fn = httpsCallable(functions, 'adminDeleteAnalyticsOverride');
+  await fn({ docId: projectDocId(projectId) });
 }
 
 export function subscribeProjectOverride(
@@ -133,16 +131,15 @@ export async function getUserOverride(uid: string): Promise<SectionsOverride | n
 export async function setUserOverride(
   uid: string,
   sections: SectionsOverride,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, userDocId(uid)), {
-    type: 'user', targetId: uid, sections,
-    updatedAt: serverTimestamp(), updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetAnalyticsVisibility');
+  await fn({ docId: userDocId(uid), type: 'user', targetId: uid, sections });
 }
 
 export async function deleteUserOverride(uid: string): Promise<void> {
-  await deleteDoc(doc(db, COL, userDocId(uid)));
+  const fn = httpsCallable(functions, 'adminDeleteAnalyticsOverride');
+  await fn({ docId: userDocId(uid) });
 }
 
 export function subscribeUserOverride(

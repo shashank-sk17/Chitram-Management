@@ -1,7 +1,8 @@
 import {
-  doc, getDoc, setDoc, deleteDoc, onSnapshot, serverTimestamp, collection, getDocs,
+  doc, getDoc, onSnapshot, collection, getDocs,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import {
   DEFAULT_PERMISSIONS,
   ALL_PERMISSION_KEYS,
@@ -53,15 +54,10 @@ export async function getRolePermissions(role: UserRole): Promise<PermissionsMap
 export async function setRolePermissions(
   role: UserRole,
   permissions: PermissionsMap,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, roleDocId(role)), {
-    type: 'role',
-    targetId: role,
-    permissions,
-    updatedAt: serverTimestamp(),
-    updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetFeaturePermissions');
+  await fn({ docId: roleDocId(role), type: 'role', targetId: role, permissions });
 }
 
 export function subscribeRolePermissions(
@@ -82,19 +78,15 @@ export async function getProjectPermissionsOverride(projectId: string): Promise<
 export async function setProjectPermissionsOverride(
   projectId: string,
   permissions: PermissionsOverride,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, projectDocId(projectId)), {
-    type: 'project',
-    targetId: projectId,
-    permissions,
-    updatedAt: serverTimestamp(),
-    updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetFeaturePermissions');
+  await fn({ docId: projectDocId(projectId), type: 'project', targetId: projectId, permissions });
 }
 
 export async function deleteProjectPermissionsOverride(projectId: string): Promise<void> {
-  await deleteDoc(doc(db, COL, projectDocId(projectId)));
+  const fn = httpsCallable(functions, 'adminDeleteFeaturePermissionsOverride');
+  await fn({ docId: projectDocId(projectId) });
 }
 
 export function subscribeProjectPermissionsOverride(
@@ -115,19 +107,15 @@ export async function getUserPermissionsOverride(uid: string): Promise<Permissio
 export async function setUserPermissionsOverride(
   uid: string,
   permissions: PermissionsOverride,
-  updaterUid: string,
+  _updaterUid: string,
 ): Promise<void> {
-  await setDoc(doc(db, COL, userDocId(uid)), {
-    type: 'user',
-    targetId: uid,
-    permissions,
-    updatedAt: serverTimestamp(),
-    updatedBy: updaterUid,
-  });
+  const fn = httpsCallable(functions, 'adminSetFeaturePermissions');
+  await fn({ docId: userDocId(uid), type: 'user', targetId: uid, permissions });
 }
 
 export async function deleteUserPermissionsOverride(uid: string): Promise<void> {
-  await deleteDoc(doc(db, COL, userDocId(uid)));
+  const fn = httpsCallable(functions, 'adminDeleteFeaturePermissionsOverride');
+  await fn({ docId: userDocId(uid) });
 }
 
 export function subscribeUserPermissionsOverride(

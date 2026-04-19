@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
+  collection, getDocs,
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import { usePermission } from '../../hooks/usePermission';
 
 interface BrandProfile {
@@ -171,10 +172,12 @@ export default function BrandProfilesPage() {
       const data = { ...editProfile };
       delete (data as any).id;
       if (isNew) {
-        const ref = await addDoc(collection(db, 'brandProfiles'), { ...data, createdAt: serverTimestamp() });
-        setProfiles(prev => [...prev, { id: ref.id, ...data } as BrandProfile]);
+        const fn = httpsCallable<unknown, { id: string }>(functions, 'adminCreateBrandProfile');
+        const result = await fn({ data });
+        setProfiles(prev => [...prev, { id: result.data.id, ...data } as BrandProfile]);
       } else if (editProfile.id) {
-        await updateDoc(doc(db, 'brandProfiles', editProfile.id), { ...data, updatedAt: serverTimestamp() });
+        const fn = httpsCallable(functions, 'adminUpdateBrandProfile');
+        await fn({ profileId: editProfile.id, data });
         setProfiles(prev => prev.map(p => p.id === editProfile.id ? { ...p, ...data } as BrandProfile : p));
       }
       setEditProfile(null);

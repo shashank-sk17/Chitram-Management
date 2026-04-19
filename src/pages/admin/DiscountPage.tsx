@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, Timestamp, query, orderBy } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { collection, getDocs, Timestamp, query, orderBy } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { usePermission } from '../../hooks/usePermission';
 
@@ -63,7 +64,8 @@ export default function DiscountPage() {
   useEffect(() => { load(); }, []);
 
   const toggleActive = async (d: DiscountWithId) => {
-    await updateDoc(doc(db, 'discounts', d.id), { active: !d.active });
+    const fn = httpsCallable(functions, 'adminToggleDiscount');
+    await fn({ discountId: d.id, active: !d.active });
     setDiscounts(prev => prev.map(x => x.id === d.id ? { ...x, active: !x.active } : x));
   };
 
@@ -77,7 +79,18 @@ export default function DiscountPage() {
     if (!user || !form.code.trim() || !form.value) return;
     setSaving(true);
     try {
-      const data: Omit<DiscountDoc, 'createdAt'> & { createdAt: any } = {
+      const fn = httpsCallable<unknown, { id: string }>(functions, 'adminCreateDiscount');
+      const result = await fn({
+        code: form.code.trim().toUpperCase(),
+        type: form.type,
+        value: Number(form.value),
+        appliesTo: form.appliesTo,
+        maxUses: form.maxUses ? Number(form.maxUses) : null,
+        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+        note: form.note,
+      });
+      const newDiscount: DiscountWithId = {
+        id: result.data.id,
         code: form.code.trim().toUpperCase(),
         type: form.type,
         value: Number(form.value),
@@ -86,12 +99,11 @@ export default function DiscountPage() {
         usedCount: 0,
         active: true,
         expiresAt: form.expiresAt ? Timestamp.fromDate(new Date(form.expiresAt)) : null,
-        createdAt: serverTimestamp(),
+        createdAt: Timestamp.now(),
         createdBy: user.uid,
         note: form.note,
       };
-      const ref = await addDoc(collection(db, 'discounts'), data);
-      setDiscounts(prev => [{ id: ref.id, ...data, createdAt: Timestamp.now() }, ...prev]);
+      setDiscounts(prev => [newDiscount, ...prev]);
       setShowForm(false);
       setForm(EMPTY_FORM());
     } catch (e: any) {
