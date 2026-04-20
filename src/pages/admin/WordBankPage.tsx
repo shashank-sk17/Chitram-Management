@@ -198,6 +198,30 @@ export default function WordBankPage() {
     setSaving(false);
   };
 
+  const handleBulkMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editWord) return;
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_IMAGES);
+    if (!files.length) return;
+    setSaving(true);
+    try {
+      const newSlots = [...mediaSlots];
+      for (const file of files) {
+        const emptyIdx = newSlots.findIndex(s => !s);
+        if (emptyIdx === -1) break;
+        const url = await uploadWordImage(editWord.id, file, emptyIdx);
+        newSlots[emptyIdx] = url;
+      }
+      setMediaSlots(newSlots);
+      const compacted = newSlots.filter(Boolean) as string[];
+      setEditForm(prev => ({ ...prev, imageUrl: compacted[0] ?? null }));
+      setWords(prev => prev.map(w => w.id === editWord.id ? { ...w, imageUrl: compacted[0] ?? null, imageUrls: compacted } : w));
+    } catch (err) {
+      console.error('Bulk upload failed:', err);
+    }
+    setSaving(false);
+    e.target.value = '';
+  };
+
   const removeMediaSlot = async (index: number) => {
     if (!editWord) return;
     setSaving(true);
@@ -610,9 +634,15 @@ export default function WordBankPage() {
                   <div className="space-y-md">
                     <div className="flex items-center justify-between">
                       <p className="font-baloo font-bold text-sm text-text-dark">Reference Images</p>
-                      <p className="font-baloo text-xs text-text-muted">
-                        {mediaSlots.filter(Boolean).length}/20 · one shown at random per drawing session
-                      </p>
+                      <div className="flex items-center gap-sm">
+                        <p className="font-baloo text-xs text-text-muted">
+                          {mediaSlots.filter(Boolean).length}/20 · one shown at random per drawing session
+                        </p>
+                        <label className={`cursor-pointer px-sm py-0.5 rounded-lg bg-lavender-light text-primary font-baloo font-semibold text-xs hover:bg-primary hover:text-white transition-colors ${saving ? 'pointer-events-none opacity-50' : ''}`}>
+                          Upload multiple
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleBulkMediaUpload} disabled={saving} />
+                        </label>
+                      </div>
                     </div>
                     <div className="grid grid-cols-5 gap-sm">
                       {Array.from({ length: MAX_IMAGES }, (_, i) => (

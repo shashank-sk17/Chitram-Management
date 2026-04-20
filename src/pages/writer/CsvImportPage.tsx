@@ -21,55 +21,125 @@ const EMPTY_LANG = (): Record<LanguageCode, string> =>
   Object.fromEntries(LANGS.map(l => [l, ''])) as Record<LanguageCode, string>;
 
 /**
- * Expected CSV columns (header row required):
- * word_te, word_en, word_hi, word_mr, word_es, word_fr,
- * pronunciation_te, pronunciation_en, ..._hi, ..._mr, ..._es, ..._fr,
- * meaning_te, meaning_en, ..._hi, ..._mr, ..._es, ..._fr,
- * sentence_te, sentence_en, ..._hi, ..._mr, ..._es, ..._fr,
- * wordType, difficulty
+ * Flexible CSV parser — column names are matched fuzzily.
+ * Accepted patterns (any separator: _ - . space, or none):
+ *   word_te | te_word | telugu | word (telugu) | te | …
+ *   meaning_en | english_meaning | definition | def_en | …
+ *   pronunciation_hi | hi_pron | phonetic_hindi | …
+ *   sentence_mr | example_marathi | usage_mr | …
+ *   wordType | word_type | type | category
+ *   difficulty | diff | level
  */
+
+const LANG_ALTS: Record<LanguageCode, string[]> = {
+  te: ['te', 'tel', 'telugu'],
+  en: ['en', 'eng', 'english'],
+  hi: ['hi', 'hin', 'hindi'],
+  mr: ['mr', 'mar', 'marathi'],
+  es: ['es', 'esp', 'spanish', 'espanol'],
+  fr: ['fr', 'fra', 'french'],
+};
+const FIELD_ALTS: Record<string, string[]> = {
+  word:          ['word', 'translation', 'vocab', 'name', 'term'],
+  pronunciation: ['pronunciation', 'pronounce', 'pron', 'phonetic', 'roman', 'romanization'],
+  meaning:       ['meaning', 'definition', 'def', 'mean', 'description', 'desc'],
+  sentence:      ['sentence', 'example', 'usage', 'context', 'sent', 'sample'],
+};
+
+function normalize(s: string) {
+  return s.toLowerCase().replace(/[\s\-\.()[\]]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+}
+
+function buildResolver(rawHeaders: string[]) {
+  const hdrs = rawHeaders.map(normalize);
+
+  function findCol(field: string, lang: LanguageCode): number {
+    const fAlts = FIELD_ALTS[field] ?? [field];
+    const lAlts = LANG_ALTS[lang];
+    for (const f of fAlts) {
+      for (const l of lAlts) {
+        for (const sep of ['_', '']) {
+          const a = hdrs.indexOf(`${f}${sep}${l}`);
+          if (a !== -1) return a;
+          const b = hdrs.indexOf(`${l}${sep}${f}`);
+          if (b !== -1) return b;
+        }
+      }
+    }
+    // bare language name → treat as "word" field for that language
+    if (field === 'word') {
+      for (const l of lAlts) {
+        const idx = hdrs.indexOf(l);
+        if (idx !== -1) return idx;
+      }
+    }
+    return -1;
+  }
+
+  // Build a lookup map once
+  const colMap: Record<string, number> = {};
+  for (const lang of LANGS) {
+    for (const field of Object.keys(FIELD_ALTS)) {
+      colMap[`${field}_${lang}`] = findCol(field, lang);
+    }
+  }
+  // wordType / difficulty
+  const typePatterns = ['wordtype', 'word_type', 'type', 'category', 'wordset'];
+  const diffPatterns = ['difficulty', 'diff', 'level', 'hard', 'complexity'];
+  colMap['wordType'] = typePatterns.map(p => hdrs.indexOf(p)).find(i => i !== -1) ?? -1;
+  colMap['difficulty'] = diffPatterns.map(p => hdrs.indexOf(p)).find(i => i !== -1) ?? -1;
+
+  return (key: string, values: string[]) => {
+    const idx = colMap[key] ?? -1;
+    return idx !== -1 ? (values[idx]?.trim() ?? '') : '';
+  };
+}
+
+function splitCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuote = !inQuote; }
+    else if (ch === ',' && !inQuote) { values.push(cur.trim()); cur = ''; }
+    else { cur += ch; }
+  }
+  values.push(cur.trim());
+  return values;
+}
+
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  const rawHeaders = splitCsvLine(lines[0]);
+  const get = buildResolver(rawHeaders);
 
   return lines.slice(1).map(line => {
-    // Handle quoted fields with commas inside
-    const values: string[] = [];
-    let cur = '';
-    let inQuote = false;
-    for (const ch of line) {
-      if (ch === '"') { inQuote = !inQuote; }
-      else if (ch === ',' && !inQuote) { values.push(cur.trim()); cur = ''; }
-      else { cur += ch; }
-    }
-    values.push(cur.trim());
-
-    const get = (key: string) => values[headers.indexOf(key)]?.trim() ?? '';
+    const values = splitCsvLine(line);
 
     const word = EMPTY_LANG();
     const pronunciation = EMPTY_LANG();
     const meaning = EMPTY_LANG();
     const sentence = EMPTY_LANG();
     for (const lang of LANGS) {
-      word[lang] = get(`word_${lang}`);
-      pronunciation[lang] = get(`pronunciation_${lang}`);
-      meaning[lang] = get(`meaning_${lang}`);
-      sentence[lang] = get(`sentence_${lang}`);
+      word[lang]         = get(`word_${lang}`, values);
+      pronunciation[lang]= get(`pronunciation_${lang}`, values);
+      meaning[lang]      = get(`meaning_${lang}`, values);
+      sentence[lang]     = get(`sentence_${lang}`, values);
     }
 
-    const rawType = get('wordtype') || get('word_type') || 'NS360';
-    const wordType: 'NS360' | 'GQD' = rawType === 'GQD' ? 'GQD' : 'NS360';
-    const rawDiff = get('difficulty') || 'Medium';
+    const rawType = get('wordType', values);
+    const wordType: 'NS360' | 'GQD' = rawType.toUpperCase() === 'GQD' ? 'GQD' : 'NS360';
+    const rawDiff = get('difficulty', values);
     const difficulty: 'Low' | 'Medium' | 'High' =
-      rawDiff === 'Low' ? 'Low' : rawDiff === 'High' ? 'High' : 'Medium';
+      /^low$/i.test(rawDiff) ? 'Low' : /^high$/i.test(rawDiff) ? 'High' : 'Medium';
 
     const errors: string[] = [];
-    if (!word.te && !word.en) errors.push('Missing word (need te or en)');
+    if (!word.te && !word.en) errors.push('Missing word (need Telugu or English column)');
 
     return { word, pronunciation, meaning, sentence, wordType, difficulty, errors };
-  }).filter(r => Object.values(r.word).some(v => v)); // skip blank rows
+  }).filter(r => Object.values(r.word).some(v => v));
 }
 
 export default function CsvImportPage() {
@@ -154,9 +224,23 @@ export default function CsvImportPage() {
       </div>
 
       {/* Template download hint */}
-      <div className="bg-lavender-light/40 rounded-xl p-md font-baloo text-sm text-primary border border-primary/20">
-        <span className="font-semibold">Expected columns:</span>{' '}
-        word_te, word_en, word_hi, word_mr, word_es, word_fr, pronunciation_te…fr, meaning_te…fr, sentence_te…fr, wordType, difficulty
+      <div className="bg-lavender-light/40 rounded-xl p-md font-baloo text-sm text-primary border border-primary/20 space-y-xs">
+        <p><span className="font-semibold">Flexible column names</span> — the parser accepts any reasonable variation:</p>
+        <p className="text-xs text-primary/80">
+          <span className="font-semibold">Word:</span> word_te · telugu · te · word (telugu) · te_word · …
+        </p>
+        <p className="text-xs text-primary/80">
+          <span className="font-semibold">Meaning:</span> meaning_en · definition · def_en · english_meaning · …
+        </p>
+        <p className="text-xs text-primary/80">
+          <span className="font-semibold">Pronunciation:</span> pronunciation_hi · pron_hi · phonetic_hindi · …
+        </p>
+        <p className="text-xs text-primary/80">
+          <span className="font-semibold">Sentence:</span> sentence_mr · example_marathi · usage_mr · …
+        </p>
+        <p className="text-xs text-primary/80">
+          <span className="font-semibold">Type:</span> wordType · word_type · category &nbsp;|&nbsp; <span className="font-semibold">Difficulty:</span> difficulty · diff · level
+        </p>
       </div>
 
       {/* Drop zone */}

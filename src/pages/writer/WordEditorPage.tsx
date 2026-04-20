@@ -69,6 +69,7 @@ export default function WordEditorPage() {
   const [slotFiles, setSlotFiles] = useState<(File | null)[]>(emptySlotFiles());
   const [slotIsExisting, setSlotIsExisting] = useState<boolean[]>(emptySlotExisting());
   const [activeLang, setActiveLang] = useState<LanguageCode>('te');
+  const [enabledLangs, setEnabledLangs] = useState<Set<LanguageCode>>(new Set<LanguageCode>(['te', 'en']));
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -100,6 +101,7 @@ export default function WordEditorPage() {
     setSlotPreviews(emptySlotPreviews());
     setSlotFiles(emptySlotFiles());
     setSlotIsExisting(emptySlotExisting());
+    setEnabledLangs(new Set<LanguageCode>(['te', 'en']));
     setActiveLang('te');
     return;
   };
@@ -122,7 +124,25 @@ export default function WordEditorPage() {
     setSlotPreviews(previews);
     setSlotFiles(emptySlotFiles());
     setSlotIsExisting(existing);
-    setActiveLang('te');
+    // Enable any language that already has content
+    const used = LANGS.filter(l => w.word?.[l] || w.meaning?.[l]);
+    setEnabledLangs(new Set<LanguageCode>(used.length > 0 ? used : ['te', 'en']));
+    setActiveLang(used[0] ?? 'te');
+  };
+
+  const toggleLang = (lang: LanguageCode) => {
+    setEnabledLangs(prev => {
+      const next = new Set(prev);
+      if (next.has(lang)) {
+        if (next.size === 1) return prev; // can't disable the last one
+        next.delete(lang);
+        if (activeLang === lang) setActiveLang([...next][0]);
+      } else {
+        next.add(lang);
+        setActiveLang(lang);
+      }
+      return next;
+    });
   };
 
   const setLangField = (
@@ -145,6 +165,27 @@ export default function WordEditorPage() {
     setSlotFiles(prev => { const n = [...prev]; n[index] = null; return n; });
     setSlotPreviews(prev => { const n = [...prev]; n[index] = null; return n; });
     setSlotIsExisting(prev => { const n = [...prev]; n[index] = false; return n; });
+  };
+
+  const handleBulkImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_IMAGES);
+    if (!files.length) return;
+    const newPreviews = [...slotPreviews];
+    const newFiles = [...slotFiles];
+    const newExisting = [...slotIsExisting];
+    let fi = 0;
+    for (let slot = 0; slot < MAX_IMAGES && fi < files.length; slot++) {
+      if (!newPreviews[slot]) {
+        newPreviews[slot] = URL.createObjectURL(files[fi]);
+        newFiles[slot] = files[fi];
+        newExisting[slot] = false;
+        fi++;
+      }
+    }
+    setSlotPreviews(newPreviews);
+    setSlotFiles(newFiles);
+    setSlotIsExisting(newExisting);
+    e.target.value = ''; // reset so same files can be re-selected
   };
 
   const handleSave = async () => {
@@ -314,9 +355,30 @@ export default function WordEditorPage() {
           </div>
         </div>
 
-        {/* Language tabs */}
+        {/* Language toggles */}
+        <div className="flex items-center gap-xs px-lg py-sm border-b border-divider bg-gray-50/50 flex-wrap">
+          {LANGS.map(lang => {
+            const on = enabledLangs.has(lang);
+            return (
+              <button
+                key={lang}
+                onClick={() => toggleLang(lang)}
+                className={`px-sm py-0.5 rounded-full font-baloo font-semibold text-xs border transition-all ${
+                  on
+                    ? `${LANG_COLORS[lang]} shadow-sm`
+                    : 'border-divider text-text-muted hover:border-primary/40 hover:text-text-dark bg-white'
+                }`}
+              >
+                {on ? '✓ ' : '+ '}{LANGUAGE_LABELS[lang]}
+              </button>
+            );
+          })}
+          <span className="ml-auto font-baloo text-[10px] text-text-muted">✨ Auto-translate — coming soon</span>
+        </div>
+
+        {/* Language tabs — only enabled languages */}
         <div className="flex gap-xs px-lg pt-md pb-0 border-b border-divider">
-          {LANGS.map(lang => (
+          {LANGS.filter(l => enabledLangs.has(l)).map(lang => (
             <button
               key={lang}
               onClick={() => setActiveLang(lang)}
@@ -337,9 +399,15 @@ export default function WordEditorPage() {
           <div>
             <div className="flex items-center justify-between mb-sm">
               <p className="font-baloo font-semibold text-sm text-text-dark">Reference Images</p>
-              <p className="font-baloo text-xs text-text-muted">
-                {slotPreviews.filter(Boolean).length}/20 · one shown at random per drawing session
-              </p>
+              <div className="flex items-center gap-sm">
+                <p className="font-baloo text-xs text-text-muted">
+                  {slotPreviews.filter(Boolean).length}/20 · one shown at random per drawing session
+                </p>
+                <label className="cursor-pointer px-sm py-0.5 rounded-lg bg-lavender-light text-primary font-baloo font-semibold text-xs hover:bg-primary hover:text-white transition-colors">
+                  Upload multiple
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleBulkImageSelect} />
+                </label>
+              </div>
             </div>
             <div className="grid grid-cols-5 gap-xs">
               {Array.from({ length: MAX_IMAGES }, (_, i) => (
