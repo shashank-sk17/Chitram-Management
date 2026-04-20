@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { usePermission } from '../../hooks/usePermission';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
-import { getWordBankPage, updateWord, approveWord, rejectWord, uploadWordImage } from '../../services/firebase/wordBank';
+import { getWordBankPage, updateWord, approveWord, rejectWord, uploadWordImage, setWordImageUrls } from '../../services/firebase/wordBank';
 import type { WordBankFilters } from '../../services/firebase/wordBank';
 import { LANGUAGE_LABELS } from '../../services/firebase/languageCurricula';
 
@@ -104,6 +104,10 @@ export default function WordBankPage() {
   const [showRejectInput, setShowRejectInput] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  const MAX_IMAGES = 20;
+  const emptyMediaSlots = () => Array<string | null>(MAX_IMAGES).fill(null);
+  const [mediaSlots, setMediaSlots] = useState<(string | null)[]>(emptyMediaSlots());
+
   const load = async (f: WordBankFilters) => {
     setLoading(true);
     try {
@@ -126,10 +130,13 @@ export default function WordBankPage() {
   const openWord = (w: WordWithId) => {
     setEditWord(w);
     setEditForm({ ...w });
-    // Pending words open on Review tab so admin sees full details before acting
     setModalTab(w.status === 'pending' ? 'review' : 'content');
     setShowRejectInput(false);
     setRejectNote('');
+    const urls = w.imageUrls ?? (w.imageUrl ? [w.imageUrl] : []);
+    const slots = emptyMediaSlots();
+    urls.slice(0, MAX_IMAGES).forEach((url, i) => { if (url) slots[i] = url; });
+    setMediaSlots(slots);
   };
 
   const saveEdit = async () => {
@@ -171,15 +178,39 @@ export default function WordBankPage() {
     setSaving(false);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaSlotUpload = (index: number) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editWord || !e.target.files?.[0]) return;
     setSaving(true);
     try {
-      const url = await uploadWordImage(editWord.id, e.target.files[0]);
-      setEditForm(prev => ({ ...prev, imageUrl: url }));
-      setWords(prev => prev.map(w => w.id === editWord.id ? { ...w, imageUrl: url } : w));
+      const url = await uploadWordImage(editWord.id, e.target.files[0], index);
+      setMediaSlots(prev => { const n = [...prev]; n[index] = url; return n; });
+      setEditForm(prev => ({ ...prev, imageUrl: url || prev.imageUrl }));
+      setWords(prev => prev.map(w => {
+        if (w.id !== editWord.id) return w;
+        const newUrls = [...(w.imageUrls ?? [])];
+        newUrls[index] = url;
+        const compacted = newUrls.filter(Boolean) as string[];
+        return { ...w, imageUrl: compacted[0] ?? null, imageUrls: compacted };
+      }));
     } catch (err) {
       console.error('Failed to upload image:', err);
+    }
+    setSaving(false);
+  };
+
+  const removeMediaSlot = async (index: number) => {
+    if (!editWord) return;
+    setSaving(true);
+    try {
+      const newSlots = [...mediaSlots];
+      newSlots[index] = null;
+      const compacted = newSlots.filter(Boolean) as string[];
+      await setWordImageUrls(editWord.id, compacted);
+      setMediaSlots(newSlots);
+      setEditForm(prev => ({ ...prev, imageUrl: compacted[0] ?? null }));
+      setWords(prev => prev.map(w => w.id === editWord.id ? { ...w, imageUrl: compacted[0] ?? null, imageUrls: compacted } : w));
+    } catch (err) {
+      console.error('Failed to remove image:', err);
     }
     setSaving(false);
   };
@@ -577,18 +608,43 @@ export default function WordBankPage() {
                 {/* ── Media tab ── */}
                 {modalTab === 'media' && (
                   <div className="space-y-md">
-                    <div>
-                      <label className="font-baloo font-bold text-sm text-text-dark block mb-sm">Word Image</label>
-                      {editForm.imageUrl ? (
-                        <img src={editForm.imageUrl} alt="" className="w-48 h-48 object-cover rounded-2xl border border-divider mb-sm shadow-sm" />
-                      ) : (
-                        <div className="w-48 h-48 rounded-2xl bg-lavender-light flex items-center justify-center text-5xl border-2 border-dashed border-divider mb-sm">📝</div>
-                      )}
-                      <label className="cursor-pointer px-md py-sm bg-lavender-light text-primary font-baloo font-semibold text-sm rounded-xl hover:bg-primary hover:text-white transition-colors inline-block">
-                        {saving ? 'Uploading…' : 'Upload Image'}
-                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={saving} />
-                      </label>
+                    <div className="flex items-center justify-between">
+                      <p className="font-baloo font-bold text-sm text-text-dark">Reference Images</p>
+                      <p className="font-baloo text-xs text-text-muted">
+                        {mediaSlots.filter(Boolean).length}/20 · one shown at random per drawing session
+                      </p>
                     </div>
+                    <div className="grid grid-cols-5 gap-sm">
+                      {Array.from({ length: MAX_IMAGES }, (_, i) => (
+                        <div key={i} className="relative group">
+                          {mediaSlots[i] ? (
+                            <>
+                              <img
+                                src={mediaSlots[i]!}
+                                alt={`ref ${i + 1}`}
+                                className="w-full aspect-square object-cover rounded-xl border border-divider"
+                              />
+                              {!saving && (
+                                <button
+                                  onClick={() => removeMediaSlot(i)}
+                                  className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Remove"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <label className={`cursor-pointer w-full aspect-square rounded-xl border-2 border-dashed border-divider flex flex-col items-center justify-center text-text-muted hover:border-primary/40 hover:bg-lavender-light/20 transition-colors ${saving ? 'pointer-events-none opacity-50' : ''}`}>
+                              <input type="file" accept="image/*" className="hidden" onChange={handleMediaSlotUpload(i)} disabled={saving} />
+                              <span className="text-lg">🖼️</span>
+                              <span className="text-[9px] font-baloo mt-0.5">{i + 1}</span>
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {saving && <p className="font-baloo text-xs text-text-muted text-center">Uploading…</p>}
                   </div>
                 )}
 

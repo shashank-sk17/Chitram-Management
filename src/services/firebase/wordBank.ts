@@ -126,21 +126,29 @@ export async function getPendingWordsCount(): Promise<number> {
   return snap.data().count;
 }
 
-export async function uploadWordImage(wordId: string, file: File, index: 0 | 1 | 2 = 0): Promise<string> {
+/** Upload a single image file to storage and return its download URL (no Firestore write). */
+export async function uploadWordImageFile(wordId: string, file: File, index: number): Promise<string> {
   const path = `wordbank-images/${wordId}/image_${index}.jpg`;
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file, { contentType: 'image/jpeg' });
-  const url = await getDownloadURL(storageRef);
+  return getDownloadURL(storageRef);
+}
 
-  // Read current arrays, splice in new values at position index
+/** Upload a single image and immediately update the word's imageUrls array in Firestore. */
+export async function uploadWordImage(wordId: string, file: File, index: number = 0): Promise<string> {
+  const url = await uploadWordImageFile(wordId, file, index);
+  const path = `wordbank-images/${wordId}/image_${index}.jpg`;
+
   const snap = await getDoc(doc(db, COL, wordId));
   const existing = snap.exists() ? (snap.data() as any) : {};
-  const imageUrls: string[] = [...(existing.imageUrls ?? [null, null, null])];
-  const imagePaths: string[] = [...(existing.imageStoragePaths ?? [null, null, null])];
+  const imageUrls: (string | null)[] = [...(existing.imageUrls ?? [])];
+  const imagePaths: (string | null)[] = [...(existing.imageStoragePaths ?? [])];
+  while (imageUrls.length <= index) imageUrls.push(null);
+  while (imagePaths.length <= index) imagePaths.push(null);
   imageUrls[index] = url;
   imagePaths[index] = path;
 
-  const trimmed = imageUrls.filter(Boolean);
+  const trimmed = imageUrls.filter(Boolean) as string[];
   await updateDoc(doc(db, COL, wordId), {
     imageUrl: trimmed[0] ?? null,
     imageStoragePath: imagePaths[0] ?? null,
@@ -149,6 +157,15 @@ export async function uploadWordImage(wordId: string, file: File, index: 0 | 1 |
     updatedAt: serverTimestamp(),
   });
   return url;
+}
+
+/** Overwrite the word's entire imageUrls array in Firestore (used after bulk slot edits). */
+export async function setWordImageUrls(wordId: string, imageUrls: string[]): Promise<void> {
+  await updateDoc(doc(db, COL, wordId), {
+    imageUrl: imageUrls[0] ?? null,
+    imageUrls,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export interface TeacherMeta {

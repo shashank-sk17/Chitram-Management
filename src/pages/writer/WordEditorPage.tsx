@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { getWordBankPage, updateWord, uploadWordImage } from '../../services/firebase/wordBank';
+import { getWordBankPage, updateWord, uploadWordImageFile, setWordImageUrls } from '../../services/firebase/wordBank';
 import { LANGUAGE_LABELS } from '../../services/firebase/languageCurricula';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
 
@@ -60,9 +60,14 @@ export default function WordEditorPage() {
   const [search, setSearch] = useState('');
   const [editWord, setEditWord] = useState<WordWithId | null>(null);
   const [form, setForm] = useState<FormData>(EMPTY_FORM());
-  // 3 image slots: [File|null, File|null, File|null]
-  const [imageFiles, setImageFiles] = useState<[File | null, File | null, File | null]>([null, null, null]);
-  const [imagePreviews, setImagePreviews] = useState<[string | null, string | null, string | null]>([null, null, null]);
+  const MAX_IMAGES = 20;
+  // Per-slot state: preview = existing URL or object URL; file = new File pending upload; isExisting = came from Firestore
+  const emptySlotPreviews = () => Array<string | null>(20).fill(null);
+  const emptySlotFiles = () => Array<File | null>(20).fill(null);
+  const emptySlotExisting = () => Array<boolean>(20).fill(false);
+  const [slotPreviews, setSlotPreviews] = useState<(string | null)[]>(emptySlotPreviews());
+  const [slotFiles, setSlotFiles] = useState<(File | null)[]>(emptySlotFiles());
+  const [slotIsExisting, setSlotIsExisting] = useState<boolean[]>(emptySlotExisting());
   const [activeLang, setActiveLang] = useState<LanguageCode>('te');
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -92,8 +97,9 @@ export default function WordEditorPage() {
   const openNew = () => {
     setEditWord(null);
     setForm(EMPTY_FORM());
-    setImageFiles([null, null, null]);
-    setImagePreviews([null, null, null]);
+    setSlotPreviews(emptySlotPreviews());
+    setSlotFiles(emptySlotFiles());
+    setSlotIsExisting(emptySlotExisting());
     setActiveLang('te');
     return;
   };
@@ -109,9 +115,13 @@ export default function WordEditorPage() {
       difficulty: w.difficulty ?? 'Medium',
       grade: 1,
     });
-    setImageFiles([null, null, null]);
     const urls = w.imageUrls ?? (w.imageUrl ? [w.imageUrl] : []);
-    setImagePreviews([urls[0] ?? null, urls[1] ?? null, urls[2] ?? null]);
+    const previews = emptySlotPreviews();
+    const existing = emptySlotExisting();
+    urls.slice(0, MAX_IMAGES).forEach((url, i) => { if (url) { previews[i] = url; existing[i] = true; } });
+    setSlotPreviews(previews);
+    setSlotFiles(emptySlotFiles());
+    setSlotIsExisting(existing);
     setActiveLang('te');
   };
 
@@ -123,11 +133,18 @@ export default function WordEditorPage() {
     setForm(prev => ({ ...prev, [field]: { ...prev[field], [lang]: value } }));
   };
 
-  const handleImageChange = (index: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSlotFile = (index: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImageFiles(prev => { const n = [...prev] as typeof prev; n[index] = file; return n; });
-    setImagePreviews(prev => { const n = [...prev] as typeof prev; n[index] = URL.createObjectURL(file); return n; });
+    setSlotFiles(prev => { const n = [...prev]; n[index] = file; return n; });
+    setSlotPreviews(prev => { const n = [...prev]; n[index] = URL.createObjectURL(file); return n; });
+    setSlotIsExisting(prev => { const n = [...prev]; n[index] = false; return n; });
+  };
+
+  const clearSlot = (index: number) => {
+    setSlotFiles(prev => { const n = [...prev]; n[index] = null; return n; });
+    setSlotPreviews(prev => { const n = [...prev]; n[index] = null; return n; });
+    setSlotIsExisting(prev => { const n = [...prev]; n[index] = false; return n; });
   };
 
   const handleSave = async () => {
@@ -147,11 +164,21 @@ export default function WordEditorPage() {
           wordType: form.wordType,
           difficulty: form.difficulty,
         });
-        for (const idx of [0, 1, 2] as const) {
-          if (imageFiles[idx]) await uploadWordImage(editWord.id, imageFiles[idx]!, idx);
+        // Build final URL list: keep surviving existing URLs, upload new files
+        const finalUrls: (string | null)[] = Array(MAX_IMAGES).fill(null);
+        for (let i = 0; i < MAX_IMAGES; i++) {
+          if (slotIsExisting[i] && slotPreviews[i]) finalUrls[i] = slotPreviews[i];
         }
+        for (let i = 0; i < MAX_IMAGES; i++) {
+          if (slotFiles[i]) {
+            const url = await uploadWordImageFile(editWord.id, slotFiles[i]!, i);
+            finalUrls[i] = url;
+          }
+        }
+        const compacted = finalUrls.filter(Boolean) as string[];
+        await setWordImageUrls(editWord.id, compacted);
         setWords(prev => prev.map(w => w.id === editWord.id
-          ? { ...w, word: form.word, pronunciation: form.pronunciation, meaning: form.meaning, sentence: form.sentence }
+          ? { ...w, word: form.word, pronunciation: form.pronunciation, meaning: form.meaning, sentence: form.sentence, imageUrl: compacted[0] ?? null, imageUrls: compacted }
           : w
         ));
         showToast('Word updated!');
@@ -175,13 +202,20 @@ export default function WordEditorPage() {
             submittedByName: user.email ?? 'content writer',
           },
         });
-        for (const idx of [0, 1, 2] as const) {
-          if (imageFiles[idx]) await uploadWordImage(result.data.wordId, imageFiles[idx]!, idx);
+        const wordId = result.data.wordId;
+        const newUrls: string[] = [];
+        for (let i = 0; i < MAX_IMAGES; i++) {
+          if (slotFiles[i]) {
+            const url = await uploadWordImageFile(wordId, slotFiles[i]!, i);
+            newUrls.push(url);
+          }
         }
+        if (newUrls.length > 0) await setWordImageUrls(wordId, newUrls);
         showToast('Submitted for review!');
         setForm(EMPTY_FORM());
-        setImageFiles([null, null, null]);
-        setImagePreviews([null, null, null]);
+        setSlotPreviews(emptySlotPreviews());
+        setSlotFiles(emptySlotFiles());
+        setSlotIsExisting(emptySlotExisting());
         load(search || undefined);
       }
     } catch (e: any) {
@@ -259,20 +293,6 @@ export default function WordEditorPage() {
             </p>
           </div>
           <div className="flex gap-sm items-center">
-            {/* 3 image upload slots */}
-            {([0, 1, 2] as const).map(idx => (
-              <label key={idx} className="cursor-pointer" title={`Image ${idx + 1}`}>
-                <input type="file" accept="image/*" onChange={handleImageChange(idx)} className="hidden" />
-                {imagePreviews[idx] ? (
-                  <img src={imagePreviews[idx]!} alt={`preview ${idx + 1}`} className="w-10 h-10 rounded-lg object-cover border border-divider" />
-                ) : (
-                  <div className="w-10 h-10 rounded-lg border-2 border-dashed border-divider flex flex-col items-center justify-center text-text-muted hover:border-primary/40">
-                    <span className="text-sm">🖼️</span>
-                    <span className="text-[9px] font-baloo">{idx + 1}</span>
-                  </div>
-                )}
-              </label>
-            ))}
             {/* Word type + difficulty */}
             <select
               value={form.wordType}
@@ -313,6 +333,44 @@ export default function WordEditorPage() {
 
         {/* Fields for active language */}
         <div className="flex-1 overflow-y-auto p-lg space-y-md">
+          {/* 20-slot image grid — drawing reference pool */}
+          <div>
+            <div className="flex items-center justify-between mb-sm">
+              <p className="font-baloo font-semibold text-sm text-text-dark">Reference Images</p>
+              <p className="font-baloo text-xs text-text-muted">
+                {slotPreviews.filter(Boolean).length}/20 · one shown at random per drawing session
+              </p>
+            </div>
+            <div className="grid grid-cols-5 gap-xs">
+              {Array.from({ length: MAX_IMAGES }, (_, i) => (
+                <div key={i} className="relative group">
+                  {slotPreviews[i] ? (
+                    <>
+                      <img
+                        src={slotPreviews[i]!}
+                        alt={`ref ${i + 1}`}
+                        className="w-full aspect-square object-cover rounded-xl border border-divider"
+                      />
+                      <button
+                        onClick={() => clearSlot(i)}
+                        className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <label className="cursor-pointer w-full aspect-square rounded-xl border-2 border-dashed border-divider flex flex-col items-center justify-center text-text-muted hover:border-primary/40 hover:bg-lavender-light/20 transition-colors">
+                      <input type="file" accept="image/*" onChange={handleSlotFile(i)} className="hidden" />
+                      <span className="text-base">🖼️</span>
+                      <span className="text-[9px] font-baloo mt-0.5">{i + 1}</span>
+                    </label>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {(['word', 'pronunciation', 'meaning', 'sentence'] as const).map(field => {
             const val = form[field][activeLang];
             return (
@@ -355,7 +413,7 @@ export default function WordEditorPage() {
         <div className="px-lg py-md border-t border-divider flex items-center justify-between bg-white">
           {editWord && (
             <button
-              onClick={() => { setEditWord(null); setForm(EMPTY_FORM()); setImagePreviews([null, null, null]); }}
+              onClick={() => { setEditWord(null); setForm(EMPTY_FORM()); setSlotPreviews(emptySlotPreviews()); setSlotFiles(emptySlotFiles()); setSlotIsExisting(emptySlotExisting()); }}
               className="font-baloo text-sm text-text-muted hover:text-text-dark"
             >
               ← New word

@@ -154,7 +154,7 @@ export interface WordBankDoc {
   sentence: Record<LanguageCode, string>;
   imageUrl: string | null;          // primary image = imageUrls[0] (backward compat)
   imageStoragePath?: string | null;
-  imageUrls?: string[];             // up to 3 image URLs
+  imageUrls?: string[];             // up to 20 image URLs — random pool for drawing reference
   imageStoragePaths?: string[];     // matching storage paths for multi-image
   audioUrl: AudioUrlMap;
   submittedBy?: string;
