@@ -70,6 +70,7 @@ export default function WordEditorPage() {
   const [slotIsExisting, setSlotIsExisting] = useState<boolean[]>(emptySlotExisting());
   const [activeLang, setActiveLang] = useState<LanguageCode>('te');
   const [enabledLangs, setEnabledLangs] = useState<Set<LanguageCode>>(new Set<LanguageCode>(['te', 'en']));
+  const [translating, setTranslating] = useState<LanguageCode | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -143,6 +144,27 @@ export default function WordEditorPage() {
       }
       return next;
     });
+  };
+
+  const autoTranslate = async (targetLang: LanguageCode) => {
+    const sourceLang = LANGS.find(l => l !== targetLang && (form.word[l] || form.meaning[l]));
+    if (!sourceLang) { showToast('Fill in at least one other language first', false); return; }
+    setTranslating(targetLang);
+    try {
+      const fn = httpsCallable<unknown, { word: string; pronunciation: string; meaning: string; sentence: string }>(functions, 'translateWordContent');
+      const { data } = await fn({ word: form.word[sourceLang], meaning: form.meaning[sourceLang], sentence: form.sentence[sourceLang], sourceLang, targetLang });
+      setForm(prev => ({
+        ...prev,
+        word: { ...prev.word, [targetLang]: data.word },
+        pronunciation: { ...prev.pronunciation, [targetLang]: data.pronunciation },
+        meaning: { ...prev.meaning, [targetLang]: data.meaning },
+        sentence: { ...prev.sentence, [targetLang]: data.sentence },
+      }));
+      showToast(`Translated to ${LANGUAGE_LABELS[targetLang]}!`);
+    } catch (e: any) {
+      showToast(e?.message ?? 'Translation failed', false);
+    }
+    setTranslating(null);
   };
 
   const setLangField = (
@@ -373,7 +395,7 @@ export default function WordEditorPage() {
               </button>
             );
           })}
-          <span className="ml-auto font-baloo text-[10px] text-text-muted">✨ Auto-translate — coming soon</span>
+          <span className="ml-auto font-baloo text-[10px] text-text-muted italic">✨ Toggle a language → auto-translate appears</span>
         </div>
 
         {/* Language tabs — only enabled languages */}
@@ -395,6 +417,24 @@ export default function WordEditorPage() {
 
         {/* Fields for active language */}
         <div className="flex-1 overflow-y-auto p-lg space-y-md">
+          {/* Auto-translate prompt — shown when active lang is empty and source exists */}
+          {!form.word[activeLang] && !form.meaning[activeLang] && LANGS.some(l => l !== activeLang && (form.word[l] || form.meaning[l])) && (
+            <div className="flex items-center gap-sm p-md bg-primary/5 rounded-xl border border-primary/20">
+              <span className="text-xl">✨</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-baloo font-semibold text-sm text-text-dark">No {LANGUAGE_LABELS[activeLang]} content yet</p>
+                <p className="font-baloo text-xs text-text-muted">Translate from existing language content</p>
+              </div>
+              <button
+                onClick={() => autoTranslate(activeLang)}
+                disabled={translating !== null}
+                className="flex-shrink-0 px-md py-xs rounded-xl bg-primary text-white font-baloo font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {translating === activeLang ? 'Translating…' : '✨ Auto-translate'}
+              </button>
+            </div>
+          )}
+
           {/* 20-slot image grid — drawing reference pool */}
           <div>
             <div className="flex items-center justify-between mb-sm">
