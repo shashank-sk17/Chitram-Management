@@ -194,13 +194,9 @@ export default function CurriculumEditorPage() {
     try {
       await submitCurriculumEdit({
         classId: selectedClassId,
-        projectId: selectedClass.schoolId || '',
-        teacherUid: user.uid,
-        grade: parseGrade(selectedClass.grade),
-        language: selectedClass.learningLanguage,
         shareWithProject,
         proposedLevels: localLevels,
-        pendingWordIds: Array.from(pendingWordIdsRef.current),
+        newWords: Array.from(pendingWordIdsRef.current).map(id => ({ id })),
       });
       pendingWordIdsRef.current = new Set(); // clear after successful submit
       setUnsubmittedPendingCount(0);

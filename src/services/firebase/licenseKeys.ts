@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDocs,
+  collection, getDocs,
   query, where, orderBy, Timestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';

@@ -24,7 +24,7 @@ import {
   type PermissionsMap,
   type PermissionsOverride,
 } from '../../types/permissions';
-import type { UserRole } from '../../types/firestore';
+import type { UserRole } from '../../types/claims';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -217,11 +217,7 @@ function RolesTab() {
       {EDITABLE_ROLES.map(role => {
         const perms = roleData[role.id] ?? DEFAULT_PERMISSIONS[role.id];
         const isOpen = openRole === role.id;
-        const relevantKeys = ALL_PERMISSION_KEYS.filter(k => {
-          if (role.id === 'admin') return true;
-          // pm/principal/contentWriter have no feature permissions — show all keys, all locked false
-          return true;
-        });
+        const relevantKeys = ALL_PERMISSION_KEYS.filter(() => true);
         const enabledCount = relevantKeys.filter(k => perms[k]).length;
 
         return (

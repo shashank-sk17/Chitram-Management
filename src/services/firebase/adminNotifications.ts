@@ -32,7 +32,7 @@ export interface AdminNotification {
 const COL = 'adminNotifications';
 
 export async function sendAdminNotification(
-  payload: Omit<AdminNotification, 'id' | 'read' | 'createdAt'>,
+  _payload: Omit<AdminNotification, 'id' | 'read' | 'createdAt'>,
 ): Promise<void> {
   // Use submitWord CF for word submissions; for other notification types use CF directly
   const fn = httpsCallable(functions, 'markAdminNotificationRead');
