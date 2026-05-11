@@ -4,11 +4,14 @@ import { useAuthStore } from '../../stores/authStore';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { usePermission } from '../../hooks/usePermission';
 import type { WordBankDoc, LanguageCode } from '../../types/firestore';
-import { getWordBankPage, updateWord, approveWord, rejectWord, uploadWordImage, setWordImageUrls } from '../../services/firebase/wordBank';
+import { getWordBankPage, updateWord, approveWord, rejectWord, uploadWordImage, setWordImageUrls, bulkDeleteWords, bulkSetWordActive } from '../../services/firebase/wordBank';
 import type { WordBankFilters } from '../../services/firebase/wordBank';
 import { LANGUAGE_LABELS } from '../../services/firebase/languageCurricula';
 
-const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
+const LANG_LABELS_SHORT: Record<LanguageCode, string> = {
+  te: '🇮🇳 Telugu', en: '🇺🇸 English', hi: '🇮🇳 Hindi', es: '🇪🇸 Spanish', fr: '🇫🇷 French',
+};
 const STATUS_BADGE: Record<string, string> = {
   active: 'bg-success/10 text-success',
   pending: 'bg-amber-50 text-amber-600',
@@ -31,7 +34,7 @@ function FieldRow({ label, value }: { label: string; value?: string | null }) {
 
 // ── TTS helper ───────────────────────────────────────────────────────────────
 const LANG_BCP47: Record<LanguageCode, string> = {
-  te: 'te-IN', en: 'en-US', hi: 'hi-IN', mr: 'mr-IN', es: 'es-ES', fr: 'fr-FR',
+  te: 'te-IN', en: 'en-US', hi: 'hi-IN', es: 'es-ES', fr: 'fr-FR',
 };
 function speakText(text: string, lang: LanguageCode) {
   if (!text || !window.speechSynthesis) return;
@@ -44,7 +47,6 @@ function speakText(text: string, lang: LanguageCode) {
 // ── Language content card (review mode) ──────────────────────────────────────
 function LangCard({ lang, word }: { lang: LanguageCode; word: WordBankDoc }) {
   const wordVal = word.word?.[lang];
-  const pronVal = word.pronunciation?.[lang];
   const meaningVal = word.meaning?.[lang];
   const sentenceVal = word.sentence?.[lang];
 
@@ -77,7 +79,6 @@ function LangCard({ lang, word }: { lang: LanguageCode; word: WordBankDoc }) {
       </div>
       <div className="grid grid-cols-2 gap-sm">
         <FieldRow label="Word" value={wordVal} />
-        <FieldRow label="Pronunciation" value={pronVal} />
         <FieldRow label="Meaning" value={meaningVal} />
         <FieldRow label="Sentence" value={sentenceVal} />
       </div>
@@ -102,6 +103,9 @@ export default function WordBankPage() {
   const [saving, setSaving] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [approvedLangFilter, setApprovedLangFilter] = useState<LanguageCode | ''>('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const MAX_IMAGES = 20;
@@ -120,12 +124,14 @@ export default function WordBankPage() {
   useEffect(() => {
     const f: WordBankFilters = {
       status: activeTab === 'all' ? undefined : activeTab as any,
+      approvedLanguage: approvedLangFilter || undefined,
       search: search || undefined,
       projectId: isProjectAdmin && myProjectId ? myProjectId : undefined,
     };
+    setSelected(new Set());
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => load(f), search ? 300 : 0);
-  }, [activeTab, search, isProjectAdmin, myProjectId]);
+  }, [activeTab, search, approvedLangFilter, isProjectAdmin, myProjectId]);
 
   const openWord = (w: WordWithId) => {
     setEditWord(w);
@@ -239,6 +245,42 @@ export default function WordBankPage() {
     setSaving(false);
   };
 
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const toggleSelectAll = () => {
+    if (selected.size === words.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(words.map(w => w.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selected.size || !confirm(`Permanently delete ${selected.size} word${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setBulkWorking(true);
+    try {
+      await bulkDeleteWords([...selected]);
+      setWords(prev => prev.filter(w => !selected.has(w.id)));
+      setSelected(new Set());
+    } catch (e: any) { alert(e?.message ?? 'Delete failed'); }
+    setBulkWorking(false);
+  };
+
+  const handleBulkSetActive = async (active: boolean) => {
+    if (!selected.size) return;
+    setBulkWorking(true);
+    try {
+      await bulkSetWordActive([...selected], active);
+      setWords(prev => prev.map(w => selected.has(w.id) ? { ...w, active } : w));
+      setSelected(new Set());
+    } catch (e: any) { alert(e?.message ?? 'Update failed'); }
+    setBulkWorking(false);
+  };
+
   const tabCounts = {
     all: words.length,
     active: words.filter(w => w.status === 'active').length,
@@ -261,17 +303,32 @@ export default function WordBankPage() {
             {isProjectAdmin ? 'Reviewing word submissions from your project' : 'Manage all vocabulary words'}
           </p>
         </div>
-        <div className="flex items-center gap-sm bg-white rounded-xl px-md py-sm shadow-sm border border-divider">
-          <span className="text-2xl">📚</span>
-          <div>
-            <p className="font-baloo font-bold text-lg text-text-dark">{words.length}</p>
-            <p className="font-baloo text-xs text-text-muted">words loaded</p>
-          </div>
+        <div className="flex items-center gap-sm flex-wrap">
+          {LANGS.map(l => {
+            const count = words.filter(w => w.approvedLanguages?.includes(l)).length;
+            const isActive = approvedLangFilter === l;
+            return (
+              <button
+                key={l}
+                onClick={() => setApprovedLangFilter(isActive ? '' : l)}
+                className="flex items-center gap-xs px-md py-xs rounded-xl font-baloo font-semibold text-sm border transition-all"
+                style={isActive
+                  ? { background: '#7C81FF', color: 'white', borderColor: '#7C81FF' }
+                  : { background: 'white', color: '#555', borderColor: '#F0EDE8' }
+                }
+              >
+                {LANG_LABELS_SHORT[l]}
+                <span className={`text-xs px-xs py-0 rounded-full font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-text-muted'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Status tabs */}
-      <div className="flex gap-xs bg-white rounded-xl p-xs shadow-sm border border-divider w-fit">
+      <div className="flex gap-xs bg-white rounded-xl p-xs shadow-sm border border-divider w-full sm:w-fit overflow-x-auto">
         {(['all', 'active', 'pending', 'rejected'] as const).map(tab => (
           <button
             key={tab}
@@ -304,19 +361,76 @@ export default function WordBankPage() {
         />
       </div>
 
+      {/* Bulk action bar */}
+      <AnimatePresence>
+        {selected.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="flex items-center gap-md px-lg py-md rounded-2xl border-2 flex-wrap"
+            style={{ background: '#1a1c42', borderColor: '#2d3070' }}
+          >
+            <span className="font-baloo font-bold text-md text-white flex-1">
+              {selected.size} word{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <button
+              onClick={() => handleBulkSetActive(true)}
+              disabled={bulkWorking}
+              className="flex items-center gap-xs px-lg py-sm rounded-xl font-baloo font-bold text-sm transition-colors disabled:opacity-50"
+              style={{ background: 'rgba(76,175,130,0.2)', color: '#4CAF82', border: '1px solid rgba(76,175,130,0.3)' }}
+            >
+              ✓ Activate
+            </button>
+            <button
+              onClick={() => handleBulkSetActive(false)}
+              disabled={bulkWorking}
+              className="flex items-center gap-xs px-lg py-sm rounded-xl font-baloo font-bold text-sm transition-colors disabled:opacity-50"
+              style={{ background: 'rgba(255,183,77,0.18)', color: '#FFB74D', border: '1px solid rgba(255,183,77,0.3)' }}
+            >
+              ⊘ Deactivate
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkWorking}
+              className="flex items-center gap-xs px-lg py-sm rounded-xl font-baloo font-bold text-sm transition-colors disabled:opacity-50"
+              style={{ background: 'rgba(255,124,124,0.18)', color: '#FF7C7C', border: '1px solid rgba(255,124,124,0.3)' }}
+            >
+              🗑 Delete
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:text-white transition-colors font-baloo text-lg"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-divider overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-lavender-light/30 border-b border-divider">
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark w-14">#</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark w-16">Image</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Telugu</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">English</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Pronunciation</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Meaning (EN)</th>
-                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Type</th>
+                <th className="px-md py-sm w-10">
+                  <input
+                    type="checkbox"
+                    checked={words.length > 0 && selected.size === words.length}
+                    ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < words.length; }}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer"
+                  />
+                </th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark hidden sm:table-cell w-14">#</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark hidden sm:table-cell w-16">Image</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark hidden sm:table-cell">Lang</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Word</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Translation</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark hidden md:table-cell">Meaning (EN)</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark hidden lg:table-cell">Type</th>
+                <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Active</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Status</th>
                 <th className="px-md py-sm text-left font-baloo font-bold text-sm text-text-dark">Actions</th>
               </tr>
@@ -324,53 +438,93 @@ export default function WordBankPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-md py-xl text-center font-baloo text-text-muted">
+                  <td colSpan={11} className="px-md py-xl text-center font-baloo text-text-muted">
                     Loading words…
                   </td>
                 </tr>
               ) : words.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-md py-xl text-center font-baloo text-text-muted">
+                  <td colSpan={11} className="px-md py-xl text-center font-baloo text-text-muted">
                     No words found
                   </td>
                 </tr>
               ) : (
-                words.map((w, i) => (
-                  <tr key={w.id} className="border-b border-divider hover:bg-lavender-light/20 transition-colors">
-                    <td className="px-md py-sm font-baloo text-sm text-text-muted">{i + 1}</td>
-                    <td className="px-md py-sm">
-                      {w.imageUrl ? (
-                        <img src={w.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-lavender-light flex items-center justify-center text-xl">📝</div>
-                      )}
-                    </td>
-                    <td className="px-md py-sm font-baloo font-semibold text-sm text-text-dark">{w.word?.te || '—'}</td>
-                    <td className="px-md py-sm font-baloo text-sm text-text-muted">{w.word?.en || '—'}</td>
-                    <td className="px-md py-sm font-baloo text-sm text-text-muted">{w.pronunciation?.te || w.pronunciation?.en || '—'}</td>
-                    <td className="px-md py-sm font-baloo text-sm text-text-muted max-w-[160px] truncate">{w.meaning?.en || '—'}</td>
-                    <td className="px-md py-sm">
-                      <span className="px-sm py-0.5 bg-lavender-light text-primary font-baloo font-semibold text-xs rounded-full">{w.wordType}</span>
-                    </td>
-                    <td className="px-md py-sm">
-                      <span className={`px-sm py-0.5 font-baloo font-semibold text-xs rounded-full capitalize ${STATUS_BADGE[w.status] || ''}`}>
-                        {w.status}
-                      </span>
-                    </td>
-                    <td className="px-md py-sm">
-                      <button
-                        onClick={() => openWord(w)}
-                        className={`px-sm py-xs font-baloo font-semibold text-xs rounded-lg transition-colors ${
-                          w.status === 'pending'
-                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                            : 'bg-lavender-light text-primary hover:bg-primary hover:text-white'
-                        }`}
-                      >
-                        {w.status === 'pending' ? '👁 Review' : 'Edit'}
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                words.map((w, i) => {
+                  const isSelected = selected.has(w.id);
+                  return (
+                    <tr
+                      key={w.id}
+                      className="border-b border-divider transition-colors"
+                      style={{ background: isSelected ? 'rgba(124,129,255,0.06)' : undefined }}
+                      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(124,129,255,0.03)'; }}
+                      onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = ''; }}
+                    >
+                      <td className="px-md py-sm" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(w.id)}
+                          className="w-4 h-4 rounded accent-primary cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-md py-sm font-baloo text-sm text-text-muted hidden sm:table-cell">{i + 1}</td>
+                      <td className="px-md py-sm hidden sm:table-cell">
+                        {w.imageUrl ? (
+                          <img src={w.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-lavender-light flex items-center justify-center text-xl">📝</div>
+                        )}
+                      </td>
+                      <td className="px-md py-sm hidden sm:table-cell">
+                        <div className="flex flex-wrap gap-0.5">
+                          {(w.approvedLanguages ?? []).length > 0
+                            ? (w.approvedLanguages!).map(l => (
+                                <span key={l} className="px-xs py-0.5 rounded-full font-baloo font-bold text-[10px]" style={{ background: '#EDEEFF', color: '#7C81FF' }}>
+                                  {l.toUpperCase()}
+                                </span>
+                              ))
+                            : <span className="text-text-muted font-baloo text-xs">—</span>
+                          }
+                        </div>
+                      </td>
+                      <td className="px-md py-sm font-baloo font-semibold text-sm text-text-dark">
+                        {w.word?.te || w.word?.en || '—'}
+                      </td>
+                      <td className="px-md py-sm font-baloo text-sm text-text-muted">
+                        {w.word?.en || w.word?.te || '—'}
+                      </td>
+<td className="px-md py-sm font-baloo text-sm text-text-muted hidden md:table-cell max-w-[160px] truncate">{w.meaning?.en || '—'}</td>
+                      <td className="px-md py-sm hidden lg:table-cell">
+                        <span className="px-sm py-0.5 bg-lavender-light text-primary font-baloo font-semibold text-xs rounded-full">{w.wordType}</span>
+                      </td>
+                      <td className="px-md py-sm">
+                        <span
+                          className="px-sm py-0.5 font-baloo font-semibold text-xs rounded-full"
+                          style={w.active ? { background: '#EBFFFE', color: '#00736a' } : { background: '#F5F5F5', color: '#9E9E9E' }}
+                        >
+                          {w.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-md py-sm">
+                        <span className={`px-sm py-0.5 font-baloo font-semibold text-xs rounded-full capitalize ${STATUS_BADGE[w.status] || ''}`}>
+                          {w.status}
+                        </span>
+                      </td>
+                      <td className="px-md py-sm">
+                        <button
+                          onClick={() => openWord(w)}
+                          className={`px-sm py-xs font-baloo font-semibold text-xs rounded-lg transition-colors ${
+                            w.status === 'pending'
+                              ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                              : 'bg-lavender-light text-primary hover:bg-primary hover:text-white'
+                          }`}
+                        >
+                          {w.status === 'pending' ? '👁 Review' : 'Edit'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -582,7 +736,7 @@ export default function WordBankPage() {
                       <div key={lang} className="bg-gray-50 rounded-xl p-md space-y-sm">
                         <h3 className="font-baloo font-bold text-sm text-text-dark">{LANGUAGE_LABELS[lang]}</h3>
                         <div className="grid grid-cols-2 gap-sm">
-                          {(['word', 'pronunciation', 'meaning', 'sentence'] as const).map(field => (
+                          {(['word', 'meaning', 'sentence'] as const).map(field => (
                             <div key={field}>
                               <label className="font-baloo text-xs text-text-muted mb-xs block capitalize">{field}</label>
                               <input
@@ -644,7 +798,7 @@ export default function WordBankPage() {
                         </label>
                       </div>
                     </div>
-                    <div className="grid grid-cols-5 gap-sm">
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-sm">
                       {Array.from({ length: MAX_IMAGES }, (_, i) => (
                         <div key={i} className="relative group">
                           {mediaSlots[i] ? (

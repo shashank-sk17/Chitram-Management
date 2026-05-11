@@ -308,6 +308,7 @@ export default function CurriculumEditorPage() {
               onAddWord={handleAddWord}
               onEditWord={handleEditWord}
               customizedWordIds={customizedWordIdSet}
+              grade={selectedClass ? parseGrade(selectedClass.grade) : undefined}
             />
           </div>
 

@@ -3,7 +3,7 @@
  * Supports cascading filters: project → school → class.
  * All Firestore reads happen in the parent; this component is pure display + filter.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, StatCard } from './Card';
 
@@ -144,6 +144,7 @@ export function GamificationPanel({
   classes = [],
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('xp');
+  const [visibleCount, setVisibleCount] = useState(10);
 
   // Cascading filter state
   const [selectedProject, setSelectedProject] = useState('all');
@@ -196,6 +197,8 @@ export function GamificationPanel({
   }, [students, selectedProject, selectedSchool, selectedClass]);
 
   const sorted = useMemo(() => sortStudents(filtered, sortKey), [filtered, sortKey]);
+
+  useEffect(() => { setVisibleCount(10); }, [sortKey, selectedProject, selectedSchool, selectedClass]);
 
   // Scope label for stats
   const scopeLabel = selectedClass !== 'all'
@@ -325,7 +328,7 @@ export function GamificationPanel({
                 </div>
 
                 <div className="space-y-sm">
-                  {sorted.map((st, idx) => {
+                  {sorted.slice(0, visibleCount).map((st, idx) => {
                     const medal = rankMedal(idx + 1);
                     const sortValue =
                       sortKey === 'xp'       ? `${st.xp} XP`
@@ -370,6 +373,19 @@ export function GamificationPanel({
                     );
                   })}
                 </div>
+                {sorted.length > visibleCount && (
+                  <button
+                    onClick={() => setVisibleCount(c => c + 10)}
+                    className="mt-md w-full py-sm rounded-xl font-baloo font-semibold text-sm text-primary border border-primary/30 hover:bg-lavender-light transition-colors"
+                  >
+                    Show 10 more ({sorted.length - visibleCount} remaining)
+                  </button>
+                )}
+                {visibleCount > 10 && sorted.length <= visibleCount && (
+                  <p className="mt-sm text-center font-baloo text-xs text-text-muted">
+                    Showing all {sorted.length} students
+                  </p>
+                )}
               </Card>
             </div>
 

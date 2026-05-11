@@ -164,7 +164,7 @@ export default function UsersPage() {
       ) : (
         <>
           {/* Stats */}
-          <div className={`grid gap-sm sm:gap-md mb-xl ${isProjectAdmin ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}>
+          <div className={`grid gap-sm sm:gap-md mb-xl ${isProjectAdmin ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}>
             {statCards.map((stat, index) => (
               <motion.div
                 key={stat.role}

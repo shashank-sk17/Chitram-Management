@@ -7,9 +7,9 @@ import type { LanguageCurriculumDoc, LanguageCode, CurriculumLevel } from '../..
 
 const COL = 'languageCurricula';
 
-export const SUPPORTED_LANGUAGES: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+export const SUPPORTED_LANGUAGES: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
 export const LANGUAGE_LABELS: Record<LanguageCode, string> = {
-  te: 'Telugu', en: 'English', hi: 'Hindi', mr: 'Marathi', es: 'Spanish', fr: 'French',
+  te: 'Telugu', en: 'English', hi: 'Hindi', es: 'Spanish', fr: 'French',
 };
 
 function curriculumId(lang: LanguageCode, grade: number): string {

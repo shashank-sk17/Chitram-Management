@@ -9,6 +9,7 @@
 
 html {
   scroll-behavior: smooth;
+  font-size: 16px;
 }
 
 body {
@@ -18,9 +19,27 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #1B1B1B;
+  line-height: 1.5;
 }
 
-/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+/* ── Base input/select sizing ────────────────────────────────────────────── */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+textarea,
+select {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 15px;
+  min-height: 44px;
+}
+
+textarea {
+  min-height: auto;
+}
+
+/* ── Scrollbar — light surfaces ──────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -29,11 +48,19 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #D4D6FF;
+  background: #DDD9D3;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #7C81FF;
+}
+
+/* ── Scrollbar — dark sidebar ────────────────────────────────────────────── */
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
@@ -53,4 +80,13 @@ table {
 ::selection {
   background: #EDEEFF;
   color: #1B1B1B;
+}
+
+/* ── Input autofill ─────────────────────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  -webkit-text-fill-color: #1B1B1B;
+  transition: background-color 5000s ease-in-out 0s;
 }

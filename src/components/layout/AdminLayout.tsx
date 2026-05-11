@@ -20,24 +20,35 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     const isProjectAdmin = claims?.role === 'projectAdmin';
     return [
       { path: '', label: 'Dashboard', icon: '🏠' },
+
+      // ── CONTENT ──────────────────────────────────────────────────────────
       ...(isSuperAdmin ? [
-        { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },
-        { path: '/admin/curricula', label: 'Language Curricula', icon: '🌐' },
-        { path: '/admin/reviews', label: 'Reviews', icon: '✅', badge: pendingEditsCount },
-        { path: '/admin/license-keys', label: 'License Keys', icon: '🔑' },
-        { path: '/admin/brand-profiles', label: 'Brand Profiles', icon: '🎨' },
-        { path: '/admin/discounts', label: 'Discounts', icon: '🏷️' },
-        { path: '/admin/analytics-visibility', label: 'Analytics Controls', icon: '🎛️' },
-        { path: '/admin/feature-permissions', label: 'Feature Permissions', icon: '🔐' },
+        { path: '/admin/word-bank',   label: 'Word Bank',          icon: '📚', badge: pendingWordsCount, sectionLabel: 'CONTENT' },
+        { path: '/admin/curricula',   label: 'Language Curricula', icon: '🌐' },
+        { path: '/admin/reviews',     label: 'Reviews',            icon: '✅', badge: pendingEditsCount },
+        { path: '/admin/word-editor', label: 'Word Editor',        icon: '✏️' },
+        { path: '/admin/word-review', label: 'Word Review',        icon: '🔍' },
       ] : []),
       ...(isProjectAdmin ? [
-        { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount },
-        { path: '/admin/reviews', label: 'Reviews', icon: '✅', badge: pendingEditsCount },
+        { path: '/admin/word-bank', label: 'Word Bank', icon: '📚', badge: pendingWordsCount, sectionLabel: 'CONTENT' },
+        { path: '/admin/reviews',   label: 'Reviews',   icon: '✅', badge: pendingEditsCount },
       ] : []),
-      { path: '/admin/projects', label: 'Projects', icon: '🎯' },
-      { path: '/admin/schools', label: 'Schools', icon: '🏫' },
-      { path: '/admin/users', label: 'Users', icon: '👥' },
-      { path: '/admin/analytics', label: 'Analytics', icon: '📈' },
+
+      // ── MANAGEMENT ───────────────────────────────────────────────────────
+      { path: '/admin/projects', label: 'Projects', icon: '🎯', sectionLabel: 'MANAGEMENT' },
+      { path: '/admin/schools',  label: 'Schools',  icon: '🏫' },
+      { path: '/admin/users',    label: 'Users',    icon: '👥' },
+
+      // ── PLATFORM ─────────────────────────────────────────────────────────
+      { path: '/admin/analytics', label: 'Analytics', icon: '📈', sectionLabel: 'PLATFORM' },
+      ...(isSuperAdmin ? [
+        { path: '/admin/license-keys',           label: 'License Keys',       icon: '🔑' },
+        { path: '/admin/brand-profiles',         label: 'Brand Profiles',     icon: '🎨' },
+        { path: '/admin/discounts',              label: 'Discounts',          icon: '🏷️' },
+        { path: '/admin/analytics-visibility',   label: 'Analytics Controls', icon: '📊' },
+        { path: '/admin/feature-controls',       label: 'Feature Controls',   icon: '🎛️' },
+        { path: '/admin/feature-permissions',    label: 'Feature Permissions',icon: '🔐' },
+      ] : []),
     ];
   }, [claims, pendingWordsCount, pendingEditsCount]);
 

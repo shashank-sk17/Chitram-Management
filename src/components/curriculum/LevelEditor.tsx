@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -27,14 +27,102 @@ interface LevelEditorProps {
   onEditWord?: (wordId: string) => void;
   customizedWordIds?: Set<string>;
   readonly?: boolean;
+  grade?: number;
 }
 
-export function LevelEditor({ levels, words, learningLanguage, onChange, onAddWord, onEditWord, customizedWordIds, readonly }: LevelEditorProps) {
+function SuggestionsRow({
+  levelNum,
+  levelWordIds,
+  otherLevelMap,
+  words,
+  learningLanguage,
+  onAdd,
+}: {
+  levelNum: number;
+  levelWordIds: string[];
+  otherLevelMap: Map<string, number>;
+  words: Record<string, WordBankDoc>;
+  learningLanguage: LanguageCode;
+  onAdd: (wordId: string) => void;
+}) {
+  const thisLevelSet = useMemo(() => new Set(levelWordIds), [levelWordIds]);
+
+  const difficulty = useMemo((): 'Low' | 'Medium' | 'High' => {
+    const counts: Record<string, number> = { Low: 0, Medium: 0, High: 0 };
+    for (const id of levelWordIds) {
+      const w = words[id];
+      if (w?.difficulty) counts[w.difficulty]++;
+    }
+    const max = Math.max(...Object.values(counts));
+    if (max === 0) return 'Medium';
+    return (Object.entries(counts).find(([, v]) => v === max)?.[0] as 'Low' | 'Medium' | 'High') ?? 'Medium';
+  }, [levelWordIds, words]);
+
+  // Use words already loaded in the store — no extra Firestore fetch needed
+  const visible = useMemo(() => {
+    const candidates = Object.entries(words)
+      .filter(([id]) => !thisLevelSet.has(id))
+      .map(([id, w]) => ({ id, ...w }));
+
+    // Sort: same difficulty first, then rest
+    return [
+      ...candidates.filter(w => w.difficulty === difficulty),
+      ...candidates.filter(w => w.difficulty !== difficulty),
+    ].slice(0, 15);
+  }, [words, thisLevelSet, difficulty]);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mt-sm border-t border-divider pt-sm">
+      <p className="font-baloo text-xs text-text-muted mb-xs px-xs">
+        ✨ Suggested — click to move to Level {levelNum}
+      </p>
+      <div className="flex gap-xs overflow-x-auto pb-xs" style={{ scrollbarWidth: 'thin' }}>
+        {visible.map(word => {
+          const wordText = word.word?.[learningLanguage] || word.word?.te || word.word?.en || '';
+          const inLevel = otherLevelMap.get(word.id);
+          return (
+            <button
+              key={word.id}
+              onClick={() => onAdd(word.id)}
+              className="relative flex-shrink-0 flex flex-col items-center gap-xs p-xs rounded-xl border-2 border-dashed border-primary/20 hover:border-primary hover:bg-lavender-light transition-all group w-[72px]"
+              title={inLevel ? `Move from Level ${inLevel} → Level ${levelNum}` : `Add to Level ${levelNum}`}
+            >
+              {inLevel != null && (
+                <span className="absolute -top-1 -right-1 bg-amber-400 text-white font-baloo font-bold text-[9px] px-1 rounded-full leading-4">
+                  L{inLevel}
+                </span>
+              )}
+              {word.imageUrl ? (
+                <img src={word.imageUrl} alt={wordText} className="w-11 h-11 object-cover rounded-lg" />
+              ) : (
+                <div className="w-11 h-11 rounded-lg bg-gray-100 flex items-center justify-center text-base">📝</div>
+              )}
+              <span className="font-baloo text-[10px] text-text-dark text-center leading-tight line-clamp-2 w-full">{wordText}</span>
+              <span className="text-primary text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity leading-none">+</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function LevelEditor({ levels, words, learningLanguage, onChange, onAddWord, onEditWord, customizedWordIds, readonly, grade: _grade }: LevelEditorProps) {
   const [openLevels, setOpenLevels] = useState<Record<number, boolean>>(
     Object.fromEntries(levels.map(l => [l.levelNum, true]))
   );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [_activeLevelNum, setActiveLevelNum] = useState<number | null>(null);
+
+  const otherLevelMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of levels) {
+      for (const id of l.wordIds) map.set(id, l.levelNum);
+    }
+    return map;
+  }, [levels]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -232,6 +320,26 @@ export function LevelEditor({ levels, words, learningLanguage, onChange, onAddWo
                         >
                           + Add Word
                         </button>
+                      )}
+
+                      {!readonly && onChange && (
+                        <SuggestionsRow
+                          levelNum={level.levelNum}
+                          levelWordIds={level.wordIds}
+                          otherLevelMap={otherLevelMap}
+                          words={words}
+                          learningLanguage={learningLanguage}
+                          onAdd={(wordId) => {
+                            // Remove from other level if present, then add to this level
+                            const updatedLevels = levels.map(l => {
+                              if (l.levelNum === level.levelNum) {
+                                return l.wordIds.includes(wordId) ? l : { ...l, wordIds: [...l.wordIds, wordId] };
+                              }
+                              return { ...l, wordIds: l.wordIds.filter(id => id !== wordId) };
+                            });
+                            onChange(updatedLevels);
+                          }}
+                        />
                       )}
                     </div>
                   </motion.div>

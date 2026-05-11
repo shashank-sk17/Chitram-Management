@@ -19,7 +19,6 @@ const SUPPORTED_LANGUAGES: { code: LanguageCode; label: string; native: string }
   { code: 'en', label: 'English',  native: 'English'  },
   { code: 'hi', label: 'Hindi',    native: 'हिन्दी'   },
   { code: 'te', label: 'Telugu',   native: 'తెలుగు'   },
-  { code: 'mr', label: 'Marathi',  native: 'मराठी'    },
   { code: 'es', label: 'Spanish',  native: 'Español'  },
   { code: 'fr', label: 'French',   native: 'Français' },
 ];

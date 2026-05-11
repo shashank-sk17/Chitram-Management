@@ -12,13 +12,13 @@ import {
 import { useCurriculumStore } from '../../stores/curriculumStore';
 import { LANGUAGE_LABELS } from '../../services/firebase/languageCurricula';
 
-const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
 
 type WordWithId = { id: string } & WordBankDoc;
 
 // ── TTS ──────────────────────────────────────────────────────────────────────
 const LANG_BCP47: Record<LanguageCode, string> = {
-  te: 'te-IN', en: 'en-US', hi: 'hi-IN', mr: 'mr-IN', es: 'es-ES', fr: 'fr-FR',
+  te: 'te-IN', en: 'en-US', hi: 'hi-IN', es: 'es-ES', fr: 'fr-FR',
 };
 function speakText(text: string, lang: LanguageCode) {
   if (!text || !window.speechSynthesis) return;
@@ -31,7 +31,6 @@ function speakText(text: string, lang: LanguageCode) {
 // ── Language tab content ─────────────────────────────────────────────────────
 function LangDetailPanel({ lang, word }: { lang: LanguageCode; word: WordBankDoc }) {
   const w = word.word?.[lang];
-  const p = word.pronunciation?.[lang];
   const m = word.meaning?.[lang];
   const s = word.sentence?.[lang];
 
@@ -72,13 +71,7 @@ function LangDetailPanel({ lang, word }: { lang: LanguageCode; word: WordBankDoc
               <span className="text-text-dark font-semibold">{w}</span>
             </div>
           )}
-          {p && (
-            <div>
-              <span className="text-xs text-text-muted block mb-0.5">Pronunciation</span>
-              <span className="text-text-muted italic">{p}</span>
-            </div>
-          )}
-          {m && (
+{m && (
             <div className="col-span-2">
               <span className="text-xs text-text-muted block mb-0.5">Meaning</span>
               <span className="text-text-dark">{m}</span>
@@ -109,7 +102,7 @@ function WordListItem({
   onClick: () => void;
 }) {
   const primaryWord = word.word?.te || word.word?.en || '—';
-  const secondaryWord = word.word?.te ? (word.word?.en || '') : '';
+  const secondaryWord = word.word?.en && word.word?.te ? word.word.en : '';
   const submittedAt = word.submittedAt
     ? new Date((word.submittedAt as any).seconds * 1000).toLocaleDateString()
     : '—';
@@ -129,11 +122,13 @@ function WordListItem({
             <p className="font-baloo text-xs text-text-muted truncate">{secondaryWord}</p>
           )}
         </div>
-        <span className={`text-xs font-baloo font-semibold px-xs py-0.5 rounded-full shrink-0 ${
-          word.wordType === 'GQD' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
-        }`}>
-          {word.wordType}
-        </span>
+        <div className="flex items-center gap-xs shrink-0">
+          <span className={`text-xs font-baloo font-semibold px-xs py-0.5 rounded-full ${
+            word.wordType === 'GQD' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
+          }`}>
+            {word.wordType}
+          </span>
+        </div>
       </div>
       <div className="mt-xs flex items-center gap-xs flex-wrap">
         {filledLangs.map(l => (
@@ -364,7 +359,7 @@ export default function WordReviewPage() {
               <div className="p-md">
                 {editMode ? (
                   <div className="space-y-md">
-                    {(['word', 'pronunciation', 'meaning', 'sentence'] as const).map(field => (
+                    {(['word', 'meaning', 'sentence'] as const).map(field => (
                       <div key={field}>
                         <label className="font-baloo text-xs text-text-muted block mb-1 capitalize">{field}</label>
                         <input

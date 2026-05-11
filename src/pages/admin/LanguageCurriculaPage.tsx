@@ -104,6 +104,11 @@ export default function LanguageCurriculaPage() {
   };
 
   const totalWords = levels.reduce((s, l) => s + l.wordIds.length, 0);
+  const TARGET_LEVELS = 8;
+  const TARGET_WORDS_PER_LEVEL = 10;
+  const levelsOk = levels.length === TARGET_LEVELS;
+  const underfullLevels = levels.filter(l => l.wordIds.length < TARGET_WORDS_PER_LEVEL);
+  const overfullLevels = levels.filter(l => l.wordIds.length > TARGET_WORDS_PER_LEVEL);
   const updatedAt = curriculum?.updatedAt;
   const updatedAtStr = updatedAt instanceof Timestamp
     ? updatedAt.toDate().toLocaleDateString()
@@ -193,11 +198,22 @@ export default function LanguageCurriculaPage() {
                 <p className="font-baloo text-xs text-text-muted">Total Words</p>
               </div>
             </div>
-            <div className="flex items-center gap-xs bg-mint-light px-md py-sm rounded-xl border border-divider">
+            <div className={`flex items-center gap-xs px-md py-sm rounded-xl border ${levelsOk ? 'bg-mint-light border-divider' : 'bg-amber-50 border-amber-200'}`}>
               <span className="text-lg">📚</span>
               <div>
-                <p className="font-baloo font-bold text-text-dark text-sm">{levels.length}</p>
-                <p className="font-baloo text-xs text-text-muted">Levels</p>
+                <p className={`font-baloo font-bold text-sm ${levelsOk ? 'text-text-dark' : 'text-amber-700'}`}>
+                  {levels.length} / {TARGET_LEVELS}
+                </p>
+                <p className="font-baloo text-xs text-text-muted">Levels {levelsOk ? '✓' : '⚠️'}</p>
+              </div>
+            </div>
+            <div className={`flex items-center gap-xs px-md py-sm rounded-xl border ${totalWords === TARGET_LEVELS * TARGET_WORDS_PER_LEVEL ? 'bg-mint-light border-divider' : 'bg-amber-50 border-amber-200'}`}>
+              <span className="text-lg">🎯</span>
+              <div>
+                <p className={`font-baloo font-bold text-sm ${totalWords === TARGET_LEVELS * TARGET_WORDS_PER_LEVEL ? 'text-text-dark' : 'text-amber-700'}`}>
+                  {totalWords} / {TARGET_LEVELS * TARGET_WORDS_PER_LEVEL}
+                </p>
+                <p className="font-baloo text-xs text-text-muted">Words</p>
               </div>
             </div>
             <div className="flex items-center gap-xs bg-white px-md py-sm rounded-xl border border-divider shadow-sm">
@@ -217,6 +233,16 @@ export default function LanguageCurriculaPage() {
             {dirty && (
               <span className="px-sm py-xs bg-amber-50 text-amber-600 font-baloo font-semibold text-xs rounded-full border border-amber-200">
                 Unsaved changes
+              </span>
+            )}
+            {underfullLevels.length > 0 && (
+              <span className="px-sm py-xs bg-red-50 text-red-600 font-baloo font-semibold text-xs rounded-full border border-red-200">
+                ⚠️ {underfullLevels.length} level{underfullLevels.length > 1 ? 's' : ''} under 10 words
+              </span>
+            )}
+            {overfullLevels.length > 0 && (
+              <span className="px-sm py-xs bg-red-50 text-red-600 font-baloo font-semibold text-xs rounded-full border border-red-200">
+                ⚠️ {overfullLevels.length} level{overfullLevels.length > 1 ? 's' : ''} over 10 words
               </span>
             )}
           </motion.div>
@@ -246,6 +272,7 @@ export default function LanguageCurriculaPage() {
               learningLanguage={selectedLang}
               onChange={handleLevelsChange}
               onAddWord={handleAddWord}
+              grade={selectedGrade}
             />
           </div>
 

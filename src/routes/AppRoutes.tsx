@@ -41,6 +41,7 @@ import AdminBrandProfilesPage from '../pages/admin/BrandProfilesPage';
 import AdminDiscountPage from '../pages/admin/DiscountPage';
 import AdminAnalyticsVisibilityPage from '../pages/admin/AnalyticsVisibilityPage';
 import AdminFeaturePermissionsPage from '../pages/admin/FeaturePermissionsPage';
+import AdminFeatureControlsPage from '../pages/admin/FeatureControlsPage';
 import PMDashboardPage from '../pages/pm/DashboardPage';
 import PMAnalyticsPage from '../pages/pm/AnalyticsPage';
 import PrincipalDashboardPage from '../pages/principal/DashboardPage';
@@ -140,6 +141,10 @@ export function AppRoutes() {
                   <Route path="discounts" element={<AdminDiscountPage />} />
                   <Route path="analytics-visibility" element={<AdminAnalyticsVisibilityPage />} />
                   <Route path="feature-permissions" element={<AdminFeaturePermissionsPage />} />
+                  <Route path="feature-controls" element={<AdminFeatureControlsPage />} />
+                  <Route path="word-editor" element={<ContentWriterWordEditorPage />} />
+                  <Route path="word-editor/import" element={<CsvImportPage />} />
+                  <Route path="word-review" element={<WordReviewPage />} />
                 </Routes>
               </AdminLayout>
             </RoleGuard>

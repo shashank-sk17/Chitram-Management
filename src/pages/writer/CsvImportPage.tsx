@@ -4,12 +4,11 @@ import { functions } from '../../config/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
-type LanguageCode = 'te' | 'en' | 'hi' | 'mr' | 'es' | 'fr';
-const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+type LanguageCode = 'te' | 'en' | 'hi' | 'es' | 'fr';
+const LANGS: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
 
 interface ParsedRow {
   word: Record<LanguageCode, string>;
-  pronunciation: Record<LanguageCode, string>;
   meaning: Record<LanguageCode, string>;
   sentence: Record<LanguageCode, string>;
   wordType: 'NS360' | 'GQD';
@@ -25,7 +24,6 @@ const EMPTY_LANG = (): Record<LanguageCode, string> =>
  * Accepted patterns (any separator: _ - . space, or none):
  *   word_te | te_word | telugu | word (telugu) | te | …
  *   meaning_en | english_meaning | definition | def_en | …
- *   pronunciation_hi | hi_pron | phonetic_hindi | …
  *   sentence_mr | example_marathi | usage_mr | …
  *   wordType | word_type | type | category
  *   difficulty | diff | level
@@ -35,13 +33,12 @@ const LANG_ALTS: Record<LanguageCode, string[]> = {
   te: ['te', 'tel', 'telugu'],
   en: ['en', 'eng', 'english'],
   hi: ['hi', 'hin', 'hindi'],
-  mr: ['mr', 'mar', 'marathi'],
   es: ['es', 'esp', 'spanish', 'espanol'],
   fr: ['fr', 'fra', 'french'],
 };
 const FIELD_ALTS: Record<string, string[]> = {
   word:          ['word', 'translation', 'vocab', 'name', 'term'],
-  pronunciation: ['pronunciation', 'pronounce', 'pron', 'phonetic', 'roman', 'romanization'],
+
   meaning:       ['meaning', 'definition', 'def', 'mean', 'description', 'desc'],
   sentence:      ['sentence', 'example', 'usage', 'context', 'sent', 'sample'],
 };
@@ -119,14 +116,12 @@ function parseCsv(text: string): ParsedRow[] {
     const values = splitCsvLine(line);
 
     const word = EMPTY_LANG();
-    const pronunciation = EMPTY_LANG();
     const meaning = EMPTY_LANG();
     const sentence = EMPTY_LANG();
     for (const lang of LANGS) {
-      word[lang]         = get(`word_${lang}`, values);
-      pronunciation[lang]= get(`pronunciation_${lang}`, values);
-      meaning[lang]      = get(`meaning_${lang}`, values);
-      sentence[lang]     = get(`sentence_${lang}`, values);
+      word[lang]    = get(`word_${lang}`, values);
+      meaning[lang] = get(`meaning_${lang}`, values);
+      sentence[lang] = get(`sentence_${lang}`, values);
     }
 
     const rawType = get('wordType', values);
@@ -138,7 +133,7 @@ function parseCsv(text: string): ParsedRow[] {
     const errors: string[] = [];
     if (!word.te && !word.en) errors.push('Missing word (need Telugu or English column)');
 
-    return { word, pronunciation, meaning, sentence, wordType, difficulty, errors };
+    return { word, meaning, sentence, wordType, difficulty, errors };
   }).filter(r => Object.values(r.word).some(v => v));
 }
 
@@ -195,7 +190,6 @@ export default function CsvImportPage() {
             wordType: row.wordType,
             difficulty: row.difficulty,
             word: row.word,
-            pronunciation: row.pronunciation,
             meaning: row.meaning,
             sentence: row.sentence,
             imageUrl: null,
@@ -232,9 +226,7 @@ export default function CsvImportPage() {
         <p className="text-xs text-primary/80">
           <span className="font-semibold">Meaning:</span> meaning_en · definition · def_en · english_meaning · …
         </p>
-        <p className="text-xs text-primary/80">
-          <span className="font-semibold">Pronunciation:</span> pronunciation_hi · pron_hi · phonetic_hindi · …
-        </p>
+
         <p className="text-xs text-primary/80">
           <span className="font-semibold">Sentence:</span> sentence_mr · example_marathi · usage_mr · …
         </p>

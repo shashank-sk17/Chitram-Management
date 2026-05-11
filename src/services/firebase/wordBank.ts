@@ -14,7 +14,8 @@ const COL = 'wordBank';
 
 export interface WordBankFilters {
   status?: 'active' | 'pending' | 'rejected';
-  language?: LanguageCode;
+  /** Filter to words with this language in their approvedLanguages array */
+  approvedLanguage?: LanguageCode;
   wordType?: 'NS360' | 'GQD';
   difficulty?: 'Low' | 'Medium' | 'High';
   search?: string;
@@ -29,6 +30,7 @@ export async function getWordBankPage(
   let q = query(collection(db, COL), orderBy('numericId', 'asc'));
 
   if (filters.status) q = query(q, where('status', '==', filters.status));
+  if (filters.approvedLanguage) q = query(q, where('approvedLanguages', 'array-contains', filters.approvedLanguage));
   if (filters.wordType) q = query(q, where('wordType', '==', filters.wordType));
   if (filters.difficulty) q = query(q, where('difficulty', '==', filters.difficulty));
   if (filters.projectId) q = query(q, where('projectId', '==', filters.projectId));
@@ -78,6 +80,16 @@ export async function getWordById(wordId: string): Promise<({ id: string } & Wor
 export async function updateWord(wordId: string, data: Partial<WordBankDoc>): Promise<void> {
   const fn = httpsCallable(functions, 'adminUpdateWord');
   await fn({ wordId, data });
+}
+
+export async function bulkDeleteWords(wordIds: string[]): Promise<void> {
+  const fn = httpsCallable(functions, 'adminBulkDeleteWords');
+  await fn({ wordIds });
+}
+
+export async function bulkSetWordActive(wordIds: string[], active: boolean): Promise<void> {
+  const fn = httpsCallable(functions, 'adminBulkSetWordActive');
+  await fn({ wordIds, active });
 }
 
 export async function approveWord(wordId: string, _adminUid: string, _adminName?: string): Promise<void> {
@@ -185,17 +197,18 @@ export async function createPendingWord(
   const teacherMeta: TeacherMeta = typeof meta === 'string' ? { teacherUid: meta } : meta;
   const { teacherUid, teacherName, schoolId, schoolName, projectId, gradeContext } = teacherMeta;
 
-  const empty: Record<LanguageCode, string> = { te: '', en: '', hi: '', mr: '', es: '', fr: '' };
-  const emptyNull: Record<LanguageCode, null> = { te: null, en: null, hi: null, mr: null, es: null, fr: null };
+  const empty: Record<LanguageCode, string> = { te: '', en: '', hi: '', es: '', fr: '' };
+  const emptyNull: Record<LanguageCode, null> = { te: null, en: null, hi: null, es: null, fr: null };
 
   const ref2 = await addDoc(collection(db, COL), {
     numericId: 0,
     status: 'pending',
     active: false,
+    approvedLanguages: [],
     wordType: 'NS360',
     difficulty: 'Medium',
     word: { ...empty },
-    pronunciation: { ...empty },
+
     meaning: { ...empty },
     sentence: { ...empty },
     imageUrl: null,

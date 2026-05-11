@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Card, StatCard } from '../../components/common/Card';
+import { useNavigate } from 'react-router-dom';
+import { Card, CompactStatCard } from '../../components/common/Card';
 import { GamificationPanel, type GamificationStudent } from '../../components/common/GamificationPanel';
 import { StatCardSkeleton, RowSkeleton } from '../../components/common/Skeleton';
 import { useAuth } from '../../features/auth/hooks/useAuth';
@@ -96,11 +97,13 @@ export default function AdminAnalyticsPage() {
   const [hardestWords, setHardestWords] = useState<HardestWord[] | null>(null);
 
   const [loadingPhase3, setLoadingPhase3] = useState(false);
+  const [phase3Error, setPhase3Error] = useState(false);
   const [licenseKeySummary, setLicenseKeySummary] = useState<LicenseKeySummary | null>(null);
   const [churnedStudents, setChurnedStudents] = useState<StudentWithId[] | null>(null);
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
+  const navigate = useNavigate();
   const isProjectAdmin = claims?.role === 'projectAdmin';
   const myProjectId = claims?.projectId;
 
@@ -200,8 +203,14 @@ export default function AdminAnalyticsPage() {
     }
   }
 
+  const retryPhase3 = () => {
+    setPhase3Error(false);
+    loadPhase3(studentDocs);
+  };
+
   async function loadPhase3(stuDocs: StudentWithId[]) {
     setLoadingPhase3(true);
+    setPhase3Error(false);
     try {
       const [unusedSnap, activeSnap, expiredSnap, recentExpiredSnap] = await Promise.all([
         getCountFromServer(query(collection(db, 'licenseKeys'), where('status', '==', 'unused'))),
@@ -233,6 +242,7 @@ export default function AdminAnalyticsPage() {
       }));
     } catch (e) {
       console.error('Error loading analytics phase 3:', e);
+      setPhase3Error(true);
     } finally {
       setLoadingPhase3(false);
     }
@@ -435,19 +445,19 @@ export default function AdminAnalyticsPage() {
       ) : (
         <>
           {/* ── Row 1: Core Platform Numbers ────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-sm sm:gap-md">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-sm">
             {([
-              { icon: '👨‍🎓', value: studentDocs.length,              label: 'Total Students',       tone: 'primary'   },
-              { icon: '🏫',   value: assignedSchools,                  label: 'Active Schools',       tone: 'secondary' },
-              { icon: '📁',   value: projects.length,                  label: 'Projects',             tone: 'accent'    },
-              { icon: '📚',   value: wordBankCount ?? '—',             label: 'Words in Bank',        tone: 'primary'   },
-              { icon: '⏳',   value: pendingItems,                     label: 'Pending Reviews',      tone: pendingItems > 0 ? 'warning' : 'muted' },
-              { icon: '🗝️',  value: unusedLicenseCount ?? '—',        label: 'Unused License Keys',  tone: 'accent'    },
-              { icon: '📅',   value: platformStats?.activeToday ?? 0,  label: 'Active Today',         tone: 'secondary' },
-              { icon: '🏫',   value: platformStats?.activeSchoolsLast7d ?? 0, label: 'Schools Active (7d)', tone: 'primary' },
+              { icon: '👨‍🎓', value: studentDocs.length,                       label: 'Total Students',      tone: 'primary'   },
+              { icon: '🏫',   value: assignedSchools,                           label: 'Active Schools',      tone: 'secondary' },
+              { icon: '📁',   value: projects.length,                           label: 'Projects',            tone: 'accent'    },
+              { icon: '📚',   value: wordBankCount ?? '—',                      label: 'Words in Bank',       tone: 'primary'   },
+              { icon: '⏳',   value: pendingItems,                              label: 'Pending Reviews',     tone: pendingItems > 0 ? 'warning' : 'muted' },
+              { icon: '🗝️',  value: unusedLicenseCount ?? '—',                 label: 'Unused Keys',         tone: 'accent'    },
+              { icon: '📅',   value: platformStats?.activeToday ?? 0,           label: 'Active Today',        tone: 'secondary' },
+              { icon: '📡',   value: platformStats?.activeSchoolsLast7d ?? 0,   label: 'Schools (7d)',        tone: 'primary'   },
             ] as Array<{ icon: string; value: string | number; label: string; tone: 'primary' | 'secondary' | 'accent' | 'warning' | 'muted' }>).map((m, i) => (
               <motion.div key={m.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, delay: i * 0.04 }}>
-                <StatCard icon={m.icon} value={m.value} label={m.label} tone={m.tone} />
+                <CompactStatCard icon={m.icon} value={m.value} label={m.label} tone={m.tone} />
               </motion.div>
             ))}
           </div>
@@ -576,7 +586,11 @@ export default function AdminAnalyticsPage() {
                                       const m = schoolMetricsMap.get(school.id);
                                       const wps = m && m.totalStudents > 0 ? Math.round(m.totalWordsLearned / m.totalStudents) : 0;
                                       return (
-                                        <tr key={school.id} className={`border-b border-divider hover:bg-lavender-light/10 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                                        <tr
+                                          key={school.id}
+                                          className={`border-b border-divider hover:bg-lavender-light/10 transition-colors cursor-pointer ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                                          onClick={() => navigate(`/admin/schools/${school.id}`)}
+                                        >
                                           <td className="px-md py-sm">
                                             <div>
                                               <p className="font-baloo font-semibold text-sm text-text-dark">{school.name}</p>
@@ -731,7 +745,11 @@ export default function AdminAnalyticsPage() {
                         const wps = metrics.totalStudents > 0 ? Math.round(metrics.totalWordsLearned / metrics.totalStudents) : 0;
                         const projectName = school.projectId ? (projectById.get(school.projectId) ?? school.projectId) : '—';
                         return (
-                          <tr key={school.id} className={`border-b border-divider hover:bg-amber-50/20 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                          <tr
+                            key={school.id}
+                            className={`border-b border-divider hover:bg-amber-50/20 transition-colors cursor-pointer ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                            onClick={() => navigate(`/admin/schools/${school.id}`)}
+                          >
                             <td className="px-md py-sm">
                               <span className={`font-baloo font-extrabold text-sm ${i === 0 ? 'text-amber-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-700' : 'text-text-muted'}`}>
                                 {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
@@ -797,9 +815,17 @@ export default function AdminAnalyticsPage() {
                   </table>
                 </div>
               ) : (
-                <p className="font-baloo text-sm text-text-muted italic">
-                  No data yet. School stats are written nightly by <code className="font-mono bg-gray-100 px-xs rounded text-xs">aggregateDaily</code>.
-                </p>
+                <div className="py-lg text-center">
+                  <div className="flex items-end justify-center gap-[5px] h-10 mb-md opacity-[0.15]">
+                    {[55, 75, 40, 90, 65, 80, 50, 70, 45, 85].map((h, i) => (
+                      <div key={i} className="w-4 bg-primary rounded-t" style={{ height: `${h}%` }} />
+                    ))}
+                  </div>
+                  <p className="font-baloo font-bold text-md text-text-dark">Collecting data...</p>
+                  <p className="font-baloo text-sm text-text-muted mt-xs max-w-xs mx-auto leading-snug">
+                    Insights appear here once students start learning. Stats are aggregated nightly.
+                  </p>
+                </div>
               )}
             </Card>
           </motion.div>
@@ -854,8 +880,19 @@ export default function AdminAnalyticsPage() {
                     </div>
                   )}
                 </div>
+              ) : phase3Error ? (
+                <div className="flex items-center gap-md p-md rounded-xl bg-red-50 border border-red-200">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 text-sm">⚠️</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-baloo font-semibold text-sm text-red-700">Failed to load license key data</p>
+                    <p className="font-baloo text-xs text-red-500 mt-[2px]">Check your connection and try again.</p>
+                  </div>
+                  <button onClick={retryPhase3} className="font-baloo text-xs font-bold text-red-700 border border-red-300 bg-white px-md py-xs rounded-full hover:bg-red-50 transition-colors flex-shrink-0">
+                    ↺ Retry
+                  </button>
+                </div>
               ) : (
-                <p className="font-baloo text-sm text-text-muted italic">Failed to load license key data.</p>
+                <p className="font-baloo text-sm text-text-muted italic">Loading…</p>
               )}
             </Card>
           </motion.div>
@@ -936,8 +973,19 @@ export default function AdminAnalyticsPage() {
                     </div>
                   )}
                 </div>
+              ) : phase3Error ? (
+                <div className="flex items-center gap-md p-md rounded-xl bg-red-50 border border-red-200">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 text-sm">⚠️</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-baloo font-semibold text-sm text-red-700">Failed to compute churn data</p>
+                    <p className="font-baloo text-xs text-red-500 mt-[2px]">Student activity data could not be loaded.</p>
+                  </div>
+                  <button onClick={retryPhase3} className="font-baloo text-xs font-bold text-red-700 border border-red-300 bg-white px-md py-xs rounded-full hover:bg-red-50 transition-colors flex-shrink-0">
+                    ↺ Retry
+                  </button>
+                </div>
               ) : (
-                <p className="font-baloo text-sm text-text-muted italic">Failed to compute churn data.</p>
+                <p className="font-baloo text-sm text-text-muted italic">Loading…</p>
               )}
             </Card>
           </motion.div>

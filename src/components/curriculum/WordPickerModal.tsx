@@ -22,7 +22,7 @@ interface WordPickerModalProps {
   editMode?: { wordId: string; wordData: WordBankDoc };
   /** Called when an existing word edit is saved */
   onEditConfirm?: (wordId: string, edits: {
-    wordText: string; english: string; pronunciation: string;
+    wordText: string; english: string;
     sentence: string; imageUrl?: string | null;
   }) => void;
   teacherUid: string;
@@ -34,7 +34,7 @@ interface WordPickerModalProps {
 type Tab = 'browse' | 'create' | 'edit';
 
 const LANG_LABEL: Record<string, string> = {
-  te: 'Telugu', en: 'English', hi: 'Hindi', mr: 'Marathi', es: 'Spanish', fr: 'French',
+  te: 'Telugu', en: 'English', hi: 'Hindi', es: 'Spanish', fr: 'French',
 };
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ export function WordPickerModal({
   // ── Create tab — form fields ───────────────────────────────────────────────
   const [wordText, setWordText] = useState('');
   const [english, setEnglish] = useState('');
-  const [pronunciation, setPronunciation] = useState('');
+
   const [sentence, setSentence] = useState('');
 
   // ── Create tab — image ────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ export function WordPickerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Create tab — AI generation states ─────────────────────────────────────
-  const [pronunciationGenerating, setPronunciationGenerating] = useState(false);
+
   const [sentenceGenerating, setSentenceGenerating] = useState(false);
 
   // ── Create tab — submission ────────────────────────────────────────────────
@@ -129,7 +129,6 @@ export function WordPickerModal({
         setTab('edit');
         setWordText(editMode.wordData.word?.[learningLanguage] || editMode.wordData.word?.en || '');
         setEnglish(editMode.wordData.word?.en || '');
-        setPronunciation(editMode.wordData.pronunciation?.[learningLanguage] || '');
         setSentence(editMode.wordData.sentence?.[learningLanguage] || '');
         setImagePreview(editMode.wordData.imageUrl || '');
         setGeneratedImageUrl(editMode.wordData.imageUrl || '');
@@ -139,7 +138,7 @@ export function WordPickerModal({
         setSelected(new Set());
         setWordText('');
         setEnglish('');
-        setPronunciation('');
+
         setSentence('');
         setImageFile(null);
         setImagePreview('');
@@ -157,6 +156,7 @@ export function WordPickerModal({
         getWordBankPage(
           {
             status: 'active',
+            approvedLanguage: learningLanguage,
             search: searchTerm || undefined,
             ...(browseProjectId ? { projectId: browseProjectId } : {}),
           },
@@ -242,24 +242,7 @@ export function WordPickerModal({
     setImageGenerating(false);
   };
 
-  // ── Create: AI — auto pronunciation ───────────────────────────────────────
-  const handleAutoPronunciation = async () => {
-    if (!wordText.trim()) return;
-    setPronunciationGenerating(true);
-    try {
-      const fn = httpsCallable<
-        { word: string; language: string; type: string },
-        { result: string }
-      >(functions, 'generateWordContent');
-      const res = await fn({ word: wordText.trim(), language: learningLanguage, type: 'pronunciation' });
-      setPronunciation(res.data.result);
-    } catch {
-      setCreateError('Pronunciation generation failed.');
-    }
-    setPronunciationGenerating(false);
-  };
-
-  // ── Create: AI — generate sentence ────────────────────────────────────────
+// ── Create: AI — generate sentence ────────────────────────────────────────
   const handleGenerateSentence = async () => {
     if (!wordText.trim()) return;
     setSentenceGenerating(true);
@@ -294,15 +277,12 @@ export function WordPickerModal({
       const wordId = await createPendingWord(
         {
           word: {
-            te: '', en: english, hi: '', mr: '', es: '', fr: '',
+            te: '', en: english, hi: '', es: '', fr: '',
             [learningLanguage]: wordText,
           } as Record<LanguageCode, string>,
-          pronunciation: {
-            te: '', en: '', hi: '', mr: '', es: '', fr: '',
-            [learningLanguage]: pronunciation,
-          } as Record<LanguageCode, string>,
+
           sentence: {
-            te: '', en: '', hi: '', mr: '', es: '', fr: '',
+            te: '', en: '', hi: '', es: '', fr: '',
             [learningLanguage]: sentence,
           } as Record<LanguageCode, string>,
           // Use AI-generated URL directly if available
@@ -339,7 +319,7 @@ export function WordPickerModal({
     onEditConfirm(editMode.wordId, {
       wordText: wordText.trim(),
       english: english.trim(),
-      pronunciation: pronunciation.trim(),
+
       sentence: sentence.trim(),
       imageUrl: generatedImageUrl || (imagePreview !== editMode.wordData.imageUrl ? null : editMode.wordData.imageUrl),
     });
@@ -626,15 +606,6 @@ export function WordPickerModal({
                       <input type="text" value={english} onChange={e => setEnglish(e.target.value)} className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
 
-                    {/* Pronunciation */}
-                    <div>
-                      <div className="flex items-center justify-between mb-xs">
-                        <label className="font-baloo font-bold text-sm text-text-dark">Pronunciation (romanised)</label>
-                        <AutoButton loading={pronunciationGenerating} disabled={!wordText.trim()} onClick={handleAutoPronunciation} label="Auto-generate" />
-                      </div>
-                      <input type="text" value={pronunciation} onChange={e => setPronunciation(e.target.value)} className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-
                     {/* Sentence */}
                     <div>
                       <div className="flex items-center justify-between mb-xs">
@@ -770,28 +741,6 @@ export function WordPickerModal({
                         value={english}
                         onChange={e => setEnglish(e.target.value)}
                         placeholder="e.g. I / Me"
-                        className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                    </div>
-
-                    {/* ── Pronunciation ───────────────────────────────────────── */}
-                    <div>
-                      <div className="flex items-center justify-between mb-xs">
-                        <label className="font-baloo font-bold text-sm text-text-dark">
-                          Pronunciation (romanised)
-                        </label>
-                        <AutoButton
-                          loading={pronunciationGenerating}
-                          disabled={!wordText.trim()}
-                          onClick={handleAutoPronunciation}
-                          label="Auto-generate"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={pronunciation}
-                        onChange={e => setPronunciation(e.target.value)}
-                        placeholder="e.g. nenu"
                         className="w-full px-md py-sm rounded-xl border border-divider font-baloo text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                     </div>

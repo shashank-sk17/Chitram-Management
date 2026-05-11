@@ -21,7 +21,6 @@ const LANG_COLORS: Record<LanguageCode, string> = {
   te: 'bg-amber-50 text-amber-700',
   en: 'bg-sky-50 text-sky-700',
   hi: 'bg-orange-50 text-orange-700',
-  mr: 'bg-purple-50 text-purple-700',
   es: 'bg-green-50 text-green-700',
   fr: 'bg-blue-50 text-blue-700',
 };
@@ -32,9 +31,9 @@ const STATUS_BADGE: Record<string, string> = {
   rejected: 'bg-error/10 text-error border border-error/20',
 };
 
-const ALL_LANGS: LanguageCode[] = ['te', 'en', 'hi', 'mr', 'es', 'fr'];
+const ALL_LANGS: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
 const LANG_DISPLAY: Record<LanguageCode, string> = {
-  te: 'Telugu', en: 'English', hi: 'Hindi', mr: 'Marathi', es: 'Spanish', fr: 'French',
+  te: 'Telugu', en: 'English', hi: 'Hindi', es: 'Spanish', fr: 'French',
 };
 
 function formatDate(ts: Timestamp | string | undefined): string {
@@ -59,7 +58,7 @@ function WordDetailCard({ word, onSave }: WordDetailCardProps) {
   const startEdit = () => {
     setDraft({
       word: { ...word.word },
-      pronunciation: { ...word.pronunciation },
+
       meaning: { ...word.meaning },
       sentence: { ...word.sentence },
     });
@@ -83,7 +82,7 @@ function WordDetailCard({ word, onSave }: WordDetailCardProps) {
   };
 
   const setField = (
-    field: 'word' | 'pronunciation' | 'meaning' | 'sentence',
+    field: 'word' | 'meaning' | 'sentence',
     lang: LanguageCode,
     value: string,
   ) => {
@@ -94,7 +93,7 @@ function WordDetailCard({ word, onSave }: WordDetailCardProps) {
   };
 
   const displayWord = editing ? (draft.word as Record<LanguageCode, string>) : word.word;
-  const displayPronunciation = editing ? (draft.pronunciation as Record<LanguageCode, string>) : word.pronunciation;
+
   const displayMeaning = editing ? (draft.meaning as Record<LanguageCode, string>) : word.meaning;
   const displaySentence = editing ? (draft.sentence as Record<LanguageCode, string>) : word.sentence;
 
@@ -178,9 +177,8 @@ function WordDetailCard({ word, onSave }: WordDetailCardProps) {
                 {LANG_DISPLAY[lang]}
               </div>
               <div className="p-sm grid grid-cols-2 gap-xs">
-                {(['word', 'pronunciation', 'meaning', 'sentence'] as const).map(field => {
+                {(['word', 'meaning', 'sentence'] as const).map(field => {
                   const val = field === 'word' ? displayWord?.[lang]
-                    : field === 'pronunciation' ? displayPronunciation?.[lang]
                     : field === 'meaning' ? displayMeaning?.[lang]
                     : displaySentence?.[lang];
                   const label = field.charAt(0).toUpperCase() + field.slice(1);

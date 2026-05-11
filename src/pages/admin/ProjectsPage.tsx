@@ -106,7 +106,7 @@ export default function ProjectsPage() {
         <>
           {/* Stats — only for super admins */}
           {!isProjectAdmin && (
-            <div className="grid grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-sm sm:gap-md mb-lg sm:mb-xl">
               {[
                 { label: 'Total Projects', count: projects.length, icon: '📁', color: 'bg-lavender-light' },
                 { label: 'Total Schools', count: schools.filter((s) => s.projectId).length, icon: '🏫', color: 'bg-mint-light' },

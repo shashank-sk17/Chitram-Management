@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 
-// Language codes supported in the app
-export type LanguageCode = 'en' | 'hi' | 'te' | 'mr' | 'es' | 'fr';
+// Language codes supported in the app (5 language banks: no Marathi)
+export type LanguageCode = 'en' | 'hi' | 'te' | 'es' | 'fr';
 
 // ===== Core User Collections =====
 
@@ -82,7 +82,6 @@ export interface SchoolDoc {
 
 export interface CustomWordEdit {
   word?: Partial<Record<LanguageCode, string>>;
-  pronunciation?: Partial<Record<LanguageCode, string>>;
   sentence?: Partial<Record<LanguageCode, string>>;
   imageUrl?: string | null;
   editedAt?: Timestamp;
@@ -148,8 +147,9 @@ export interface WordBankDoc {
   wordType: 'NS360' | 'GQD';
   difficulty: 'Low' | 'Medium' | 'High';
   active: boolean;
+  /** Languages whose content has been reviewed and approved — used for curriculum word-picker filtering */
+  approvedLanguages?: LanguageCode[];
   word: Record<LanguageCode, string>;
-  pronunciation: Record<LanguageCode, string>;
   meaning: Record<LanguageCode, string>;
   sentence: Record<LanguageCode, string>;
   imageUrl: string | null;          // primary image = imageUrls[0] (backward compat)
@@ -261,16 +261,52 @@ export interface AnnouncementDoc {
 
 // ===== License Keys =====
 
+export type LicenseKeyPlan = 'free' | 'basic' | 'pro' | 'enterprise';
+
+export const PLAN_LEVEL_MAP: Record<LicenseKeyPlan, number> = {
+  free: 2,
+  basic: 4,
+  pro: 8,
+  enterprise: 999,
+};
+
 export interface LicenseKeyDoc {
   key: string;
   grade: number;
   language: LanguageCode;
+  plan?: LicenseKeyPlan;
   status: 'unused' | 'active' | 'expired';
   createdBy: string;
   createdAt: Timestamp;
+  validFrom?: Timestamp;
   expiresAt?: Timestamp;
+  maxRedemptions?: number;
+  redemptionCount?: number;
   usedBy?: string;
   redeemedAt?: Timestamp;
+  projectId?: string;
+  schoolId?: string;
+  note?: string;
+  maxLevel?: number;
+}
+
+// ===== Discounts =====
+
+export interface DiscountDoc {
+  code: string;
+  type: 'percent' | 'flat';
+  value: number;
+  appliesTo: 'all' | 'monthly' | 'yearly' | 'lifetime' | 'level';
+  maxUses: number | null;
+  usedCount: number;
+  active: boolean;
+  expiresAt: Timestamp | null;
+  validFrom?: Timestamp;
+  createdAt: Timestamp;
+  createdBy: string;
+  note: string;
+  projectId?: string;
+  schoolId?: string;
 }
 
 // ===== Legacy (kept for old pages until migration complete) =====
