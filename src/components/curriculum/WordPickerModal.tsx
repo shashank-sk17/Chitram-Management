@@ -103,8 +103,11 @@ export function WordPickerModal({
   // ── Create tab — form fields ───────────────────────────────────────────────
   const [wordText, setWordText] = useState('');
   const [english, setEnglish] = useState('');
-
   const [sentence, setSentence] = useState('');
+
+  // ── Create tab — duplicate detection ──────────────────────────────────────
+  const [duplicates, setDuplicates] = useState<Array<{ id: string } & WordBankDoc>>([]);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
 
   // ── Create tab — image ────────────────────────────────────────────────────
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -138,15 +141,42 @@ export function WordPickerModal({
         setSelected(new Set());
         setWordText('');
         setEnglish('');
-
         setSentence('');
         setImageFile(null);
         setImagePreview('');
         setGeneratedImageUrl('');
+        setDuplicates([]);
       }
       setCreateError('');
     }
   }, [open, editMode?.wordId]);
+
+  // ── Create: cross-language duplicate detection ─────────────────────────────
+  useEffect(() => {
+    if (tab !== 'create' || wordText.trim().length < 2) {
+      setDuplicates([]);
+      return;
+    }
+    setCheckingDuplicates(true);
+    const t = setTimeout(async () => {
+      try {
+        const [activeRes, pendingRes] = await Promise.all([
+          getWordBankPage({ status: 'active',  search: wordText.trim() }, undefined, 8),
+          getWordBankPage({ status: 'pending', search: wordText.trim() }, undefined, 4),
+        ]);
+        const excluded = new Set(currentLevelIds);
+        const seen = new Set<string>();
+        const combined = [...activeRes.words, ...pendingRes.words].filter(w => {
+          if (excluded.has(w.id) || seen.has(w.id)) return false;
+          seen.add(w.id);
+          return true;
+        });
+        setDuplicates(combined);
+      } catch { /* non-critical */ }
+      setCheckingDuplicates(false);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [wordText, tab]);
 
   // ── Browse: load words ─────────────────────────────────────────────────────
   const load = useCallback(async (searchTerm: string) => {
@@ -262,6 +292,12 @@ export function WordPickerModal({
       setCreateError('Sentence generation failed.');
     }
     setSentenceGenerating(false);
+  };
+
+  // ── Create: use an existing word instead of creating a new one ───────────
+  const handleUseExisting = (wordId: string) => {
+    onConfirm([wordId]);
+    onClose();
   };
 
   // ── Create: submit ─────────────────────────────────────────────────────────
@@ -730,6 +766,77 @@ export function WordPickerModal({
                         autoFocus
                       />
                     </div>
+
+                    {/* ── Duplicate / similar word detection ─────────────────── */}
+                    {(checkingDuplicates || duplicates.length > 0) && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+                        <div className="px-md py-sm flex items-center gap-xs border-b border-amber-200">
+                          <span className="text-sm">⚠️</span>
+                          <p className="font-baloo font-semibold text-sm text-amber-800">
+                            {checkingDuplicates
+                              ? 'Checking for similar words…'
+                              : `${duplicates.length} similar word${duplicates.length !== 1 ? 's' : ''} already in bank`}
+                          </p>
+                        </div>
+                        {!checkingDuplicates && duplicates.length > 0 && (
+                          <div className="divide-y divide-amber-100">
+                            {duplicates.map(w => {
+                              const allLangs: LanguageCode[] = ['te', 'en', 'hi', 'es', 'fr'];
+                              const filledLangs = allLangs.filter(l => !!w.word?.[l]?.trim());
+                              const approvedSet = new Set(w.approvedLanguages ?? []);
+                              const hasCurrLang = !!w.word?.[learningLanguage]?.trim();
+                              return (
+                                <div key={w.id} className="px-md py-sm flex items-start justify-between gap-md">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-baloo font-bold text-sm text-text-dark">
+                                      {w.word?.[learningLanguage] || w.word?.en || w.word?.te || w.id}
+                                    </p>
+                                    {w.word?.en && w.word?.[learningLanguage] !== w.word?.en && (
+                                      <p className="font-baloo text-xs text-text-muted">{w.word.en}</p>
+                                    )}
+                                    <div className="mt-xs flex items-center gap-xs flex-wrap">
+                                      {filledLangs.map(l => (
+                                        <span
+                                          key={l}
+                                          className={`text-[10px] font-baloo font-semibold px-1 rounded ${
+                                            approvedSet.has(l)
+                                              ? 'bg-success/15 text-success'
+                                              : 'bg-gray-100 text-text-muted'
+                                          }`}
+                                        >
+                                          {l}{approvedSet.has(l) ? ' ✓' : ''}
+                                        </span>
+                                      ))}
+                                      {w.status === 'pending' && (
+                                        <span className="text-[10px] font-baloo font-semibold px-1 rounded bg-amber-100 text-amber-700">
+                                          pending review
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!hasCurrLang && (
+                                      <p className="font-baloo text-[10px] text-amber-700 mt-0.5">
+                                        Missing {LANG_LABEL[learningLanguage]} content — will need translation added
+                                      </p>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => handleUseExisting(w.id)}
+                                    className="shrink-0 px-sm py-xs rounded-lg bg-primary text-white font-baloo font-semibold text-xs hover:bg-primary/90 transition-colors"
+                                  >
+                                    Use this
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="px-md py-xs border-t border-amber-200">
+                          <p className="font-baloo text-[10px] text-amber-700">
+                            Using an existing word keeps the bank clean. Only create new if none of the above match your concept.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── English translation ─────────────────────────────────── */}
                     <div>

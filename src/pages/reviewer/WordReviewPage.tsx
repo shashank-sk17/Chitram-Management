@@ -163,6 +163,8 @@ export default function WordReviewPage() {
   const [editForm, setEditForm] = useState<Partial<WordBankDoc>>({});
   const [editMode, setEditMode] = useState(false);
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null);
+  const [showPartialWarning, setShowPartialWarning] = useState(false);
+  const [missingLangs, setMissingLangs] = useState<LanguageCode[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -183,6 +185,8 @@ export default function WordReviewPage() {
     setRejectNote('');
     setEditMode(false);
     setActionDone(null);
+    setShowPartialWarning(false);
+    setMissingLangs([]);
   };
 
   const handleApprove = async () => {
@@ -193,11 +197,23 @@ export default function WordReviewPage() {
       setWords(prev => prev.filter(w => w.id !== selected.id));
       setSelected(null);
       setActionDone('approved');
+      setShowPartialWarning(false);
       refreshBadgeCounts();
     } catch (err) {
       console.error('Failed to approve:', err);
     }
     setSaving(false);
+  };
+
+  const handleApproveClick = () => {
+    if (!selected) return;
+    const missing = LANGS.filter(l => !selected.word?.[l]?.trim());
+    if (missing.length > 0) {
+      setMissingLangs(missing);
+      setShowPartialWarning(true);
+      return;
+    }
+    handleApprove();
   };
 
   const handleReject = async () => {
@@ -391,10 +407,56 @@ export default function WordReviewPage() {
             <div className="bg-white rounded-2xl border border-divider p-lg space-y-md">
               <h3 className="font-baloo font-bold text-sm text-text-dark">Review Decision</h3>
 
+              {/* Partial-content warning */}
+              <AnimatePresence>
+                {showPartialWarning && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="rounded-xl border border-amber-300 bg-amber-50 p-md space-y-sm overflow-hidden"
+                  >
+                    <p className="font-baloo font-semibold text-sm text-amber-800">
+                      ⚠️ Missing content in {missingLangs.length} language{missingLangs.length !== 1 ? 's' : ''}
+                    </p>
+                    <p className="font-baloo text-xs text-amber-700">
+                      The following languages have no word text and will be excluded from{' '}
+                      <code className="bg-amber-100 px-0.5 rounded">approvedLanguages</code>:
+                    </p>
+                    <div className="flex flex-wrap gap-xs">
+                      {missingLangs.map(l => (
+                        <span key={l} className="px-sm py-0.5 rounded-full bg-amber-200 text-amber-900 font-baloo font-semibold text-xs">
+                          {LANGUAGE_LABELS[l]}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="font-baloo text-xs text-amber-700">
+                      This word will not appear in {missingLangs.map(l => LANGUAGE_LABELS[l]).join(', ')} curriculum pickers.
+                      Go back to edit and translate first, or approve partially.
+                    </p>
+                    <div className="flex gap-sm pt-xs">
+                      <button
+                        onClick={handleApprove}
+                        disabled={saving}
+                        className="flex-1 py-sm rounded-xl bg-success text-white font-baloo font-bold text-sm hover:bg-success/90 transition-colors disabled:opacity-50"
+                      >
+                        {saving ? 'Processing…' : `Approve partially (${LANGS.length - missingLangs.length} language${LANGS.length - missingLangs.length !== 1 ? 's' : ''})`}
+                      </button>
+                      <button
+                        onClick={() => setShowPartialWarning(false)}
+                        className="px-md py-sm rounded-xl border border-divider text-text-muted font-baloo text-sm hover:text-text-dark transition-colors"
+                      >
+                        Go back
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Approve */}
-              {can('wordReview.approve') && (
+              {can('wordReview.approve') && !showPartialWarning && (
                 <button
-                  onClick={handleApprove}
+                  onClick={handleApproveClick}
                   disabled={saving}
                   className="w-full py-md rounded-xl bg-success text-white font-baloo font-bold text-base hover:bg-success/90 transition-colors disabled:opacity-50"
                 >
